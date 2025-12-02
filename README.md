@@ -1,16 +1,18 @@
 # NFT Sniper - Magic Eden Listing Monitor
 
-A lightweight, personal NFT listing monitor for Solana's Magic Eden marketplace. Monitor multiple collections with per-collection price filtering and get real-time alerts.
+A lightweight, real-time NFT listing monitor for Solana's Magic Eden marketplace. Designed for speed and efficiency, it monitors a specific collection for listings below a target price and provides instant audio and visual alerts.
 
 ## Features
 
-- ✅ Real-time monitoring of Magic Eden listings
-- ✅ Per-collection price range filters
-- ✅ Web-based dashboard with live updates
-- ✅ Sound + visual alerts for matching listings
-- ✅ Rate-limited API polling (respects Magic Eden limits)
-- ✅ No database required - runs entirely in-memory
-- ✅ Lightweight and easy to maintain
+- **🎯 Single-Target Focus**: Dedicated monitoring for one collection at a time for maximum performance.
+- **⚡ Real-time Updates**: Uses Magic Eden's activity API to detect listings seconds after they appear.
+- **🔔 Instant Alerts**: Visual highlighting and audio notifications for listings matching your criteria.
+- **🖥️ Modern UI**:
+  - **Compact Header**: Status and stats at a glance.
+  - **Controls Bar**: Quick access to change target collection and max price.
+  - **Horizontal Card Layout**: Information-dense card layout showing the most recent listings.
+- **🛡️ Rate Limit Smart**: Respects Magic Eden's API limits with intelligent polling intervals (1s base interval).
+- **💾 No Database**: Runs entirely in-memory for zero-setup deployment.
 
 ## Quick Start
 
@@ -34,149 +36,90 @@ npm start
 
 The dashboard will be available at: `http://localhost:3000`
 
-### 4. Add Collections to Watch
+### 4. Start Sniping
 
-1. Open the dashboard in your browser
-2. Enter a collection symbol (e.g., `degods`, `okay_bears`)
-3. Set min and max price in SOL
-4. Click "Add Collection"
+1. Open the dashboard.
+2. Enter a **Collection Symbol** (e.g., `degods`, `okay_bears`, `mad_lads`).
+   - *Tip: Use the symbol found in the Magic Eden URL (e.g., magiceden.io/marketplace/**degods**)*
+3. Set your **Max Price** in SOL.
+4. Click **Update Target**.
 
-## Development
+The bot will immediately fetch a snapshot of current listings and then switch to monitoring real-time activities.
 
-### Watch Mode
-
-For development with auto-recompile:
-
-```bash
-npm run watch
-```
-
-Then in another terminal:
-
-```bash
-npm start
-```
-
-### Project Structure
+## Project Structure
 
 ```
 /src
-  /pollers        - Magic Eden API polling with rate limiting
-  /filters        - Per-collection price filtering logic
-  /services       - Listing cache to prevent duplicates
-  /api            - SSE endpoint for real-time browser updates
-  /config         - Configuration management
-  /types.ts       - TypeScript interfaces
-  /server.ts      - Main Express server
+  /pollers        - Magic Eden API interaction (Listings & Activities)
+  /config         - Configuration management (config.json)
+  /services       - Listing cache and deduplication logic
+  /api            - SSE (Server-Sent Events) broadcaster
+  /types.ts       - TypeScript definitions
+  /server.ts      - Main Express server & polling loop
 
 /public
-  /index.html     - Dashboard UI
-  /app.js         - Frontend JavaScript
-  /styles.css     - Dark mode styling
+  /index.html     - Dashboard structure
+  /app.js         - Frontend logic (SSE connection, UI rendering)
+  /styles.css     - Modern dark mode styling
 
-/config.json      - Your watched collections (auto-created)
+/config.json      - Persisted target configuration
 ```
 
 ## Configuration
 
-Collections are managed via the web UI, but you can also edit `config.json` directly:
+The configuration is managed automatically via the UI, but is stored in `config.json`.
+You can manually edit this file if needed (requires server restart to pick up changes if not done via API).
 
 ```json
 {
-  "collections": [
-    {
-      "symbol": "degods",
-      "priceMin": 5,
-      "priceMax": 50
-    },
-    {
-      "symbol": "okay_bears",
-      "priceMin": 1,
-      "priceMax": 10
-    }
-  ]
+  "target": {
+    "symbol": "degods",
+    "priceMax": 50
+  }
 }
 ```
 
-**Note:** The server will automatically reload the config and restart polling when it changes.
-
 ## API Endpoints
 
-### GET /api/config
-Get current configuration
+The server exposes a REST API for controlling the sniper programmatically.
 
-### POST /api/collections
-Add a new collection
+### `GET /api/config`
+Returns the current target and collection metadata.
+
+### `POST /api/target`
+Sets the collection to monitor.
 ```json
 {
   "symbol": "degods",
-  "priceMin": 5,
   "priceMax": 50
 }
 ```
 
-### DELETE /api/collections/:symbol
-Remove a collection
+### `DELETE /api/target`
+Stops monitoring and clears the current target.
 
-### PUT /api/collections/:symbol
-Update collection price range
-```json
-{
-  "priceMin": 10,
-  "priceMax": 100
-}
-```
+### `GET /api/stats`
+Returns system stats (cache size, connected clients).
 
-### GET /api/stats
-Get current stats (cache size, connected clients, etc.)
-
-### GET /api/listings-stream
-Server-Sent Events stream for real-time listing updates
+### `GET /api/listings-stream`
+Server-Sent Events (SSE) endpoint for real-time listing updates.
 
 ## Rate Limiting
 
-The tool respects Magic Eden's rate limits:
-- **Without API key:** 120 requests/minute (2 per second)
-- **Queue-based polling:** Sequential requests with 500ms minimum gap
-- **Exponential backoff:** Automatically backs off on 429 errors (30s, 60s, 120s)
-
-For higher limits, you can request an API key from Magic Eden and add it to the poller.
-
-## Tips
-
-1. **Start with 1-3 collections** to test the system
-2. **Set realistic price ranges** to avoid too many alerts
-3. **Check the stats** regularly to monitor cache size and queue length
-4. **Keep the browser tab open** to receive real-time alerts
+The tool is designed to be a good citizen of the Magic Eden API:
+- **Polling Interval**: Defaults to ~1 second between checks.
+- **Token Details**: Fetches token names with a 500ms delay to avoid hitting rate limits on bursts.
+- **Error Handling**: Automatically pauses and retries on API errors.
 
 ## Troubleshooting
 
-### No listings appearing
+### No listings appearing?
+- **Check the Symbol**: Ensure you are using the correct collection symbol from the Magic Eden URL.
+- **Check Activity**: If the collection is quiet (no new listings), the feed will remain empty until a new event occurs.
+- **Console Logs**: Check the terminal output where `npm start` is running for detailed polling logs.
 
-- Check that the collection symbol is correct (lowercase, e.g., `degods` not `DeGods`)
-- Verify there are active listings for that collection on Magic Eden
-- Check the browser console for errors
-- Ensure the server is running and connected (status should show "Connected")
-
-### Rate limit errors
-
-- The tool automatically handles rate limits with exponential backoff
-- If you're watching many collections, consider getting an API key from Magic Eden
-- Reduce polling frequency in `server.ts` if needed
-
-### Build errors
-
-- Make sure you're using Node.js 18 or higher
-- Delete `node_modules` and `dist` folders and reinstall: `npm install && npm run build`
-
-## Future Enhancements
-
-- Tensor marketplace integration
-- Rarity scoring (HowRare.is, MoonRank APIs)
-- Desktop notifications
-- Historical data storage
-- Auto-buy functionality
-- Discord/Telegram webhooks
+### "Rate Limit" errors in logs?
+- The bot automatically handles these by retrying. If they persist, try increasing the delay in `server.ts` or monitoring a less active collection.
 
 ## License
 
