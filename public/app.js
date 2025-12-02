@@ -58,6 +58,8 @@ function connectSSE() {
       console.log('[SSE] Connection confirmed, client ID:', message.clientId);
     } else if (message.type === 'listing') {
       handleNewListing(message.data);
+    } else if (message.type === 'listing-update') {
+      handleListingUpdate(message.data);
     }
   };
 
@@ -234,6 +236,21 @@ function handleNewListing(listing) {
   // Limit feed to 20 items (only show most recent)
   while (listingsFeed.children.length > 20) {
     listingsFeed.removeChild(listingsFeed.lastChild);
+  }
+}
+
+// Handle listing update (metadata loaded)
+function handleListingUpdate(update) {
+  console.log('[Update]', update);
+  const card = listingsFeed.querySelector(`.listing-card[data-mint="${update.mint}"]`);
+
+  if (card) {
+    const titleEl = card.querySelector('.listing-title');
+    if (titleEl) {
+      titleEl.textContent = update.name;
+      titleEl.classList.add('updated');
+      setTimeout(() => titleEl.classList.remove('updated'), 1000);
+    }
   }
 }
 

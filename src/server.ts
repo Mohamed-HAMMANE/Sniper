@@ -201,22 +201,34 @@ async function pollLoop() {
       // We reverse them so the broadcast order is chronological (Oldest first).
       matchingListings.reverse();
 
-      // Fetch names concurrently for these relevant listings
-      await Promise.all(matchingListings.map(async (listing) => {
+      // 1. Optimistic Broadcast: Send immediately without waiting for names
+      for (const listing of matchingListings) {
+        // Set a placeholder if name is missing
+        if (!listing.name) {
+          listing.name = 'Loading...';
+        }
+        broadcaster.broadcastListing(listing);
+      }
+
+      // 2. Background Metadata Fetch: Get names and send updates
+      // We don't await this, so the poll loop continues immediately
+      Promise.all(matchingListings.map(async (listing) => {
         try {
           const name = await poller.getTokenName(listing.mint);
           if (name) {
             listing.name = name;
             console.log(`[Metadata] Fetched name for ${listing.mint}: ${name}`);
+            
+            // Broadcast update
+            broadcaster.broadcastMessage('listing-update', {
+              mint: listing.mint,
+              name: name
+            });
           }
         } catch (e) {
           console.error(`[Metadata] Failed to fetch name for ${listing.mint}`, e);
         }
       }));
-
-      for (const listing of matchingListings) {
-        broadcaster.broadcastListing(listing);
-      }
     }
 
   } catch (error) {

@@ -1,6 +1,13 @@
+import * as https from 'https';
 import { Listing, MagicEdenListing, CollectionMetadata } from '../types';
 
 const MAGIC_EDEN_API_BASE = 'https://api-mainnet.magiceden.dev/v2';
+
+const agent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 10,
+  keepAliveMsecs: 10000
+});
 
 export class MagicEdenPoller {
   private nameCache = new Map<string, string>();
@@ -84,7 +91,7 @@ export class MagicEdenPoller {
     try {
       const response = await this.fetchUrl(url);
       const data = await response.json() as any;
-      
+
       if (data.name) {
         this.nameCache.set(mint, data.name);
       }
@@ -122,9 +129,12 @@ export class MagicEdenPoller {
 
   private async fetchUrl(url: string): Promise<Response> {
     const response = await fetch(url, {
+      // @ts-ignore - node-fetch supports agent, but types might conflict with native fetch
+      agent: agent,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Connection': 'keep-alive'
       }
     });
 

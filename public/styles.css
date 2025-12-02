@@ -411,6 +411,11 @@ h2 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.3s;
+}
+
+.listing-title.updated {
+  color: #00d4ff;
 }
 
 .listing-collection-name {
