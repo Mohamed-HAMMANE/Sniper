@@ -3,8 +3,8 @@ import * as path from 'path';
 import { ConfigManager } from './config/configManager';
 import { ListingCache } from './services/listingCache';
 import { SSEBroadcaster } from './api/sseEndpoint';
+import { CollectionService } from './services/collectionService';
 import { TargetCollection, CollectionMetadata, Listing } from './types';
-import { MetadataService } from './services/metadataService';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,10 +17,10 @@ app.use(express.static(path.join(__dirname, '../public')));
 const configManager = new ConfigManager();
 const cache = new ListingCache(60); // Cache for 60 minutes
 const broadcaster = new SSEBroadcaster();
-const metadataService = new MetadataService();
+const collectionService = new CollectionService();
 
 // State
-let currentMetadata: CollectionMetadata | null = null;
+// let currentMetadata: CollectionMetadata | null = null; // No longer needed as global state
 
 // SSE endpoint
 app.get('/api/listings-stream', (req, res) => {
@@ -30,45 +30,40 @@ app.get('/api/listings-stream', (req, res) => {
 // Get config
 app.get('/api/config', (req, res) => {
   res.json({
-    target: configManager.getTarget(),
-    metadata: currentMetadata
+    targets: configManager.getTargets(),
+    collections: collectionService.getCollections()
   });
 });
 
-// Set target collection
+// Add target collection
 app.post('/api/target', async (req, res) => {
-  const { symbol, priceMax } = req.body;
+  const { symbol, priceMax, minRarity } = req.body;
 
-  if (priceMax === undefined) {
-    return res.status(400).json({ error: 'Missing required field: priceMax' });
+  if (!symbol || priceMax === undefined) {
+    return res.status(400).json({ error: 'Missing required fields: symbol, priceMax' });
   }
 
   const target: TargetCollection = {
-    symbol: symbol ? symbol.toLowerCase() : undefined,
-    priceMax: Number(priceMax)
+    symbol: symbol,
+    priceMax: Number(priceMax),
+    minRarity: minRarity
   };
 
-  configManager.setTarget(target);
+  configManager.addTarget(target);
 
-  // Reset state
-  cache.clear();
-  broadcaster.clearHistory();
+  // Clear cache/history if needed, or keep it to support multiple streams
+  // cache.clear(); 
+  // broadcaster.clearHistory();
 
-  // No metadata fetch - we rely on local DB for item details
-  currentMetadata = {
-    symbol: target.symbol || 'Global Watch',
-    name: target.symbol || 'Global Watch',
-    image: '' // No image available without API
-  };
-
-  res.json({ success: true, target, metadata: currentMetadata });
+  res.json({ success: true, targets: configManager.getTargets() });
 });
 
 // Remove target
-app.delete('/api/target', (req, res) => {
-  configManager.removeTarget();
-  currentMetadata = null;
-  res.json({ success: true });
+// Remove target
+app.delete('/api/target/:symbol', (req, res) => {
+  const { symbol } = req.params;
+  configManager.removeTarget(symbol);
+  res.json({ success: true, targets: configManager.getTargets() });
 });
 
 // Get stats
@@ -76,7 +71,7 @@ app.get('/api/stats', (req, res) => {
   res.json({
     cacheSize: cache.getCacheSize(),
     connectedClients: broadcaster.getClientCount(),
-    target: configManager.getTarget()?.symbol || 'Global'
+    activeTargets: configManager.getTargets().length
   });
 });
 
@@ -89,8 +84,18 @@ app.post('/webhook', (req, res) => {
     const notifications = req.body;
     if (!Array.isArray(notifications)) return;
 
-    const target = configManager.getTarget();
-    if (!target) return;
+    const targets = configManager.getTargets();
+    if (targets.length === 0) return;
+
+    // Rarity Mapping for comparison
+    const rarityOrder: Record<string, number> = {
+      'COMMON': 0,
+      'UNCOMMON': 1,
+      'RARE': 2,
+      'EPIC': 3,
+      'LEGENDARY': 4,
+      'MYTHIC': 5
+    };
 
     for (const event of notifications) {
       if (event.type === 'NFT_LISTING') {
@@ -100,33 +105,49 @@ app.post('/webhook', (req, res) => {
         const priceSol = priceLamports / 1_000_000_000;
         const seller = eventData.seller;
 
-        // 1. Price Check
-        if (priceSol > target.priceMax) continue;
+        // Check if this mint belongs to ANY active target collection
+        // We need to check each target because different targets might have different criteria
+        for (const target of targets) {
+          // 1. Check if item is in this collection's database
+          const itemMeta = collectionService.getItem(target.symbol, mint);
 
-        // 2. Local Metadata Lookup (Zero Latency)
-        // This acts as our "Whitelist" - if it's not in DB, we ignore it
-        const localMeta = metadataService.getMetadata(mint);
+          // If not in this collection, skip
+          if (!itemMeta) continue;
 
-        if (!localMeta) {
-          // console.log(`[Webhook] Ignored ${mint} (Not in database)`);
-          continue;
+          // 2. Price Check
+          if (priceSol > target.priceMax) continue;
+
+          // 3. Rarity Check
+          if (target.minRarity && itemMeta.tier) {
+            const itemRarityVal = rarityOrder[itemMeta.tier.toUpperCase()] || 0;
+            const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
+
+            if (itemRarityVal < targetRarityVal) {
+              // console.log(`[Webhook] Ignored ${itemMeta.name} (Rarity ${itemMeta.tier} < ${target.minRarity})`);
+              continue;
+            }
+          }
+
+          const listing: Listing = {
+            source: event.source || 'Unknown',
+            mint: mint,
+            price: priceSol,
+            listingUrl: `https://magiceden.io/item-details/${mint}`, // TODO: Adjust based on source
+            timestamp: Date.now(),
+            seller: seller,
+            name: itemMeta.name, // Use local name
+            imageUrl: itemMeta.image, // Use local image
+            rank: itemMeta.rank,
+            rarity: itemMeta.tier
+          };
+
+          console.log(`[Webhook] 🔔 SNIPE! ${listing.name} (${listing.rarity}) for ${listing.price} SOL`);
+          broadcaster.broadcastListing(listing);
+
+          // Break after finding a match? Or allow multiple matches? 
+          // Usually one item belongs to one collection, so break is safe.
+          break;
         }
-
-        const listing: Listing = {
-          collection: target.symbol || 'Unknown',
-          mint: mint,
-          price: priceSol,
-          listingUrl: `https://magiceden.io/item-details/${mint}`,
-          timestamp: Date.now(),
-          seller: seller,
-          name: localMeta.name,
-          imageUrl: localMeta.image,
-          // Add extra fields for rarity if needed
-          // rank: localMeta.rank
-        };
-
-        console.log(`[Webhook] 🔔 SNIPE! ${listing.name} for ${listing.price} SOL`);
-        broadcaster.broadcastListing(listing);
       }
     }
   } catch (error) {

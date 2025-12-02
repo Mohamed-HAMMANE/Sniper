@@ -1,20 +1,22 @@
 export interface TargetCollection {
-  symbol?: string;
+  symbol: string;
   priceMax: number;
+  minRarity?: string; // 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'
 }
 
 export interface CollectionMetadata {
   symbol: string;
   name: string;
   image: string;
+  floorPrice?: number;
 }
 
 export interface Config {
-  target?: TargetCollection;
+  targets: TargetCollection[];
 }
 
 export interface Listing {
-  collection: string;
+  source: string;
   mint: string;
   price: number; // in SOL
   listingUrl: string;
@@ -23,6 +25,8 @@ export interface Listing {
   name?: string;
   seller?: string;
   signature?: string;
+  rank?: number;
+  rarity?: string;
 }
 
 

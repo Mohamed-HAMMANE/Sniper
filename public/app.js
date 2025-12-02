@@ -1,17 +1,18 @@
 // State
 let eventSource = null;
-let currentTarget = null;
-let currentMetadata = null;
+let activeTargets = [];
+let availableCollections = [];
 
 // Elements
 const clientStatus = document.getElementById('client-status');
 const statsDisplay = document.getElementById('stats-display');
-// targetDisplay removed
 const listingsFeed = document.getElementById('listings-feed');
-const setTargetBtn = document.getElementById('set-target-btn');
+const addTargetBtn = document.getElementById('add-target-btn');
 const clearFeedBtn = document.getElementById('clear-feed-btn');
-// const collectionSymbolInput = document.getElementById('collection-symbol'); // Removed
+const collectionSelect = document.getElementById('collection-select');
 const priceMaxInput = document.getElementById('price-max');
+const raritySelect = document.getElementById('rarity-select');
+const activeTargetsList = document.getElementById('active-targets-list');
 
 // Audio for notifications
 const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=');
@@ -26,13 +27,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup event listeners
 function setupEventListeners() {
-  setTargetBtn.addEventListener('click', setTarget);
+  addTargetBtn.addEventListener('click', addTarget);
   clearFeedBtn.addEventListener('click', clearFeed);
 
   // Allow Enter key in inputs
   [priceMaxInput].forEach(input => {
     input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') setTarget();
+      if (e.key === 'Enter') addTarget();
     });
   });
 }
@@ -77,12 +78,50 @@ async function loadConfig() {
   try {
     const response = await fetch('/api/config');
     const config = await response.json();
-    currentTarget = config.target;
-    currentMetadata = config.metadata;
-    renderTarget();
+    activeTargets = config.targets || [];
+    availableCollections = config.collections || [];
+
+    renderCollectionOptions();
+    renderActiveTargets();
   } catch (error) {
     console.error('Error loading config:', error);
   }
+}
+
+function renderCollectionOptions() {
+  // Save current selection if any
+  const currentVal = collectionSelect.value;
+
+  collectionSelect.innerHTML = '<option value="" disabled selected>Select Collection...</option>';
+
+  availableCollections.forEach(col => {
+    const option = document.createElement('option');
+    option.value = col.symbol;
+    option.textContent = col.name;
+    collectionSelect.appendChild(option);
+  });
+
+  if (currentVal) collectionSelect.value = currentVal;
+}
+
+function renderActiveTargets() {
+  activeTargetsList.innerHTML = '';
+
+  activeTargets.forEach(target => {
+    const colMeta = availableCollections.find(c => c.symbol === target.symbol);
+    const name = colMeta ? colMeta.name : target.symbol;
+    const rarityText = target.minRarity ? `(${target.minRarity}+)` : '';
+
+    const tag = document.createElement('div');
+    tag.className = 'target-tag';
+    tag.innerHTML = `
+      <span class="target-name">${name}</span>
+      <span class="target-price">< ${target.priceMax} SOL</span>
+      <span class="target-rarity">${rarityText}</span>
+      <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')">×</button>
+    `;
+    activeTargetsList.appendChild(tag);
+  });
 }
 
 // Load stats
@@ -99,120 +138,78 @@ async function loadStats() {
   setTimeout(loadStats, 5000);
 }
 
-// Render target (Updates Inputs & Button State)
-function renderTarget() {
-  const btnIcon = setTargetBtn.querySelector('.btn-icon');
-  const btnText = setTargetBtn.querySelector('.btn-text');
+// Render target (Updates Inputs & Button State) - REMOVED OLD FUNCTION
+// function renderTarget() { ... }
 
-  // Ensure Stop button exists
-  let stopBtn = document.getElementById('stop-btn');
-  if (!stopBtn) {
-    stopBtn = document.createElement('button');
-    stopBtn.id = 'stop-btn';
-    stopBtn.className = 'btn-stop';
-    stopBtn.innerHTML = '<span class="btn-icon">■</span><span class="btn-text">Stop</span>';
-    stopBtn.onclick = removeTarget;
-    stopBtn.style.display = 'none'; // Hidden by default
-
-    // Append after start button
-    setTargetBtn.parentNode.appendChild(stopBtn);
-  }
-
-  if (!currentTarget) {
-    // No target active
-    setTargetBtn.disabled = false;
-    if (btnIcon) btnIcon.textContent = '▶';
-    if (btnText) btnText.textContent = 'Start Sniping';
-    stopBtn.style.display = 'none';
-
-    return;
-  }
-
-  // Target active
-  // collectionSymbolInput.value = currentTarget.symbol; // Removed
-  priceMaxInput.value = currentTarget.priceMax;
-
-  setTargetBtn.disabled = false;
-  setTargetBtn.innerHTML = '<span class="btn-icon">⟳</span> Update Target';
-  if (stopBtn) stopBtn.style.display = 'inline-flex';
-}
-
-// Set target
-async function setTarget() {
-  // const symbol = collectionSymbolInput.value.trim().toLowerCase(); // Removed
+// Add target
+async function addTarget() {
+  const symbol = collectionSelect.value;
   const priceMax = parseFloat(priceMaxInput.value);
+  const minRarity = raritySelect.value;
 
-  if (isNaN(priceMax)) {
-    alert('Please fill in all fields with valid values');
+  if (!symbol || isNaN(priceMax)) {
+    alert('Please select a collection and enter a valid max price');
     return;
   }
 
-  if (priceMax < 0) {
-    alert('Invalid price');
-    return;
-  }
-
-  const originalHTML = setTargetBtn.innerHTML;
-  setTargetBtn.disabled = true;
-  setTargetBtn.innerHTML = '<span class="btn-icon">⏳</span> Saving...';
+  const originalHTML = addTargetBtn.innerHTML;
+  addTargetBtn.disabled = true;
+  addTargetBtn.innerHTML = '<span class="btn-icon">⏳</span> Adding...';
 
   try {
     const response = await fetch('/api/target', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priceMax }) // Only sending priceMax
+      body: JSON.stringify({ symbol, priceMax, minRarity })
     });
 
     if (response.ok) {
-      // Reload config
-      await loadConfig();
+      const data = await response.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
+
+      // Reset inputs
+      // collectionSelect.value = ''; // Keep selected for ease of use?
+      // priceMaxInput.value = '';
     } else {
-      alert('Failed to set target');
-      setTargetBtn.disabled = false;
-      setTargetBtn.innerHTML = originalHTML;
+      alert('Failed to add target');
     }
   } catch (error) {
-    console.error('Error setting target:', error);
-    alert('Error setting target');
-    setTargetBtn.disabled = false;
-    setTargetBtn.innerHTML = originalHTML;
+    console.error('Error adding target:', error);
+    alert('Error adding target');
+  } finally {
+    addTargetBtn.disabled = false;
+    addTargetBtn.innerHTML = originalHTML;
   }
 }
 
 // Remove target
-async function removeTarget() {
-  if (!confirm(`Stop sniping?`)) {
+// Exposed globally for onclick handler
+window.removeTarget = async function (symbol) {
+  if (!confirm(`Stop watching this collection?`)) {
     return;
   }
 
   try {
-    const response = await fetch(`/api/target`, {
+    const response = await fetch(`/api/target/${symbol}`, {
       method: 'DELETE'
     });
 
     if (response.ok) {
-      // Clear local state
-      currentTarget = null;
-      currentMetadata = null;
-
-      // Reset UI
-      renderTarget();
-
-      // Clear inputs
-      // collectionSymbolInput.value = ''; // Removed
-      priceMaxInput.value = '';
+      const data = await response.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
     } else {
-      alert('Failed to stop sniping');
+      alert('Failed to remove target');
     }
   } catch (error) {
-    console.error('Error stopping sniping:', error);
-    alert('Error stopping sniping');
+    console.error('Error removing target:', error);
+    alert('Error removing target');
   }
 }
 
 // Handle new listing
 function handleNewListing(listing) {
-  console.log('[Listing]', listing);
 
   // Remove empty state if present
   const emptyState = listingsFeed.querySelector('.empty-state');
@@ -271,11 +268,13 @@ function createListingCard(listing) {
   card.dataset.mint = listing.mint;
 
   // Determine price color
-  // Determine price color
   let priceClass = 'good';
-  if (currentTarget && listing.price > currentTarget.priceMax * 0.9) {
-    priceClass = 'medium';
-  }
+  // Check against the specific target for this collection
+  // Since we don't have the target info attached to the listing easily here without looking it up,
+  // we can just default to 'good' or try to find the target.
+  const target = activeTargets.find(t => listing.name && listing.name.includes(t.symbol)); // Approximate or need better matching
+  // Actually, we don't have collection symbol in listing anymore, but we have name.
+  // Let's just leave it green for now as it passed the filter.
 
   const relativeTime = getRelativeTime(listing.timestamp);
 
@@ -286,7 +285,11 @@ function createListingCard(listing) {
       </div>
       <div class="listing-info">
         <div class="listing-title">${listing.name || 'Unnamed NFT'}</div>
-        <div class="listing-collection-name">${listing.collection}</div>
+        <div class="listing-source">${listing.source}</div>
+        <div class="listing-rarity-info">
+            ${listing.rarity ? `<span class="rarity-badge ${listing.rarity.toLowerCase()}">${listing.rarity}</span>` : ''}
+            ${listing.rank ? `<span class="rank-badge">Rank #${listing.rank}</span>` : ''}
+        </div>
         <div class="listing-mint-id">Mint: ${listing.mint.substring(0, 6)}...${listing.mint.substring(listing.mint.length - 4)}</div>
         <div class="listing-timestamp" data-timestamp="${listing.timestamp}">⚡ ${relativeTime}</div>
       </div>

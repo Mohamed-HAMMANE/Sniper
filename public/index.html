@@ -32,20 +32,39 @@
             </div>
 
             <div class="controls-bar">
-                <div class="input-group price-group">
-                    <label class="input-label">MAX PRICE (SOL)</label>
-                    <input type="number" id="price-max" placeholder="1000" step="0.1" min="0" />
+                <div class="input-group">
+                    <label class="input-label">COLLECTION</label>
+                    <select id="collection-select">
+                        <option value="" disabled selected>Select Collection...</option>
+                    </select>
                 </div>
 
-                <button id="set-target-btn" class="btn btn-primary">
-                    <span class="btn-icon">⟳</span>
-                    Update Target
-                </button>
+                <div class="input-group price-group">
+                    <label class="input-label">MAX PRICE</label>
+                    <input type="number" id="price-max" placeholder="10.5" step="0.1" min="0" />
+                </div>
 
-                <button id="stop-btn" class="btn btn-danger" style="display: none;">
-                    <span class="btn-icon">■</span>
-                    Stop
+                <div class="input-group">
+                    <label class="input-label">MIN RARITY</label>
+                    <select id="rarity-select">
+                        <option value="">Any Rarity</option>
+                        <option value="COMMON">Common+</option>
+                        <option value="UNCOMMON">Uncommon+</option>
+                        <option value="RARE">Rare+</option>
+                        <option value="EPIC">Epic+</option>
+                        <option value="LEGENDARY">Legendary+</option>
+                        <option value="MYTHIC">Mythic</option>
+                    </select>
+                </div>
+
+                <button id="add-target-btn" class="btn btn-primary">
+                    <span class="btn-icon">+</span>
+                    Add Watch
                 </button>
+            </div>
+
+            <div id="active-targets-list" class="active-targets-list">
+                <!-- Active targets will be rendered here -->
             </div>
         </header>
 
