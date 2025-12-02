@@ -1,5 +1,5 @@
 export interface TargetCollection {
-  symbol: string;
+  symbol?: string;
   priceMax: number;
 }
 
@@ -25,11 +25,4 @@ export interface Listing {
   signature?: string;
 }
 
-export interface MagicEdenListing {
-  tokenMint: string;
-  price: number;
-  seller: string;
-  tokenSize?: number;
-  expiry?: number;
-  [key: string]: any;
-}
+
