@@ -10,7 +10,7 @@ const statsDisplay = document.getElementById('stats-display');
 const listingsFeed = document.getElementById('listings-feed');
 const setTargetBtn = document.getElementById('set-target-btn');
 const clearFeedBtn = document.getElementById('clear-feed-btn');
-const collectionSymbolInput = document.getElementById('collection-symbol');
+// const collectionSymbolInput = document.getElementById('collection-symbol'); // Removed
 const priceMaxInput = document.getElementById('price-max');
 
 // Audio for notifications
@@ -30,7 +30,7 @@ function setupEventListeners() {
   clearFeedBtn.addEventListener('click', clearFeed);
 
   // Allow Enter key in inputs
-  [collectionSymbolInput, priceMaxInput].forEach(input => {
+  [priceMaxInput].forEach(input => {
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') setTarget();
     });
@@ -129,7 +129,7 @@ function renderTarget() {
   }
 
   // Target active
-  collectionSymbolInput.value = currentTarget.symbol;
+  // collectionSymbolInput.value = currentTarget.symbol; // Removed
   priceMaxInput.value = currentTarget.priceMax;
 
   setTargetBtn.disabled = false;
@@ -139,10 +139,10 @@ function renderTarget() {
 
 // Set target
 async function setTarget() {
-  const symbol = collectionSymbolInput.value.trim().toLowerCase();
+  // const symbol = collectionSymbolInput.value.trim().toLowerCase(); // Removed
   const priceMax = parseFloat(priceMaxInput.value);
 
-  if (!symbol || isNaN(priceMax)) {
+  if (isNaN(priceMax)) {
     alert('Please fill in all fields with valid values');
     return;
   }
@@ -160,7 +160,7 @@ async function setTarget() {
     const response = await fetch('/api/target', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, priceMax })
+      body: JSON.stringify({ priceMax }) // Only sending priceMax
     });
 
     if (response.ok) {
@@ -199,7 +199,7 @@ async function removeTarget() {
       renderTarget();
 
       // Clear inputs
-      collectionSymbolInput.value = '';
+      // collectionSymbolInput.value = ''; // Removed
       priceMaxInput.value = '';
     } else {
       alert('Failed to stop sniping');
