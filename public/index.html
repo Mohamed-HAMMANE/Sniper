@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFT Sniper - Magic Eden Monitor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="header-main">
+                <div class="header-left">
+                    <div class="brand">
+                        <div class="brand-icon">🎯</div>
+                        <div class="brand-info">
+                            <h1>NFT Sniper</h1>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <div class="status-compact">
+                        <span id="client-status" class="status">Disconnected</span>
+                    </div>
+                    <div class="stats-compact">
+                        <div id="stats-display" class="stats-value">📦 0 | 👥 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-bar">
+                <div class="input-group">
+                    <label class="input-label">COLLECTION SYMBOL</label>
+                    <input type="text" id="collection-symbol" placeholder="e.g., sachiorigins" />
+                </div>
+
+                <div class="input-group price-group">
+                    <label class="input-label">MAX PRICE (SOL)</label>
+                    <input type="number" id="price-max" placeholder="1000" step="0.1" min="0" />
+                </div>
+
+                <button id="set-target-btn" class="btn btn-primary">
+                    <span class="btn-icon">⟳</span>
+                    Update Target
+                </button>
+
+                <button id="stop-btn" class="btn btn-danger" style="display: none;">
+                    <span class="btn-icon">■</span>
+                    Stop
+                </button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- Live Feed -->
+            <section class="feed-panel">
+                <div class="feed-header">
+                    <h2>📡 Live Listings</h2>
+                    <button id="clear-feed-btn" class="btn-small">Clear Feed</button>
+                </div>
+
+                <div id="listings-feed" class="listings-feed">
+                    <p class="empty-state">Waiting for listings...</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
