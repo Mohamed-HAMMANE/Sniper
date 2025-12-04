@@ -4,83 +4,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFT Sniper - Magic Eden Monitor</title>
+    <meta name="description" content="Professional NFT Sniper - Real-time NFT listing monitor with rarity tracking">
+    <title>NFT Sniper - Live NFT Monitor</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <div class="header-main">
-                <div class="header-left">
-                    <div class="brand">
-                        <div class="brand-icon">🎯</div>
-                        <div class="brand-info">
-                            <h1>Global NFT Sniper</h1>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="header-right">
-                    <div class="status-compact">
-                        <span id="client-status" class="status">Disconnected</span>
-                    </div>
-                    <div class="stats-compact">
-                        <div id="stats-display" class="stats-value">📦 0 | 👥 0</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="controls-bar">
-                <div class="input-group">
-                    <label class="input-label">COLLECTION</label>
-                    <select id="collection-select">
-                        <option value="" disabled selected>Select Collection...</option>
-                    </select>
-                </div>
-
-                <div class="input-group price-group">
-                    <label class="input-label">MAX PRICE</label>
-                    <input type="number" id="price-max" placeholder="10.5" step="0.1" min="0" />
-                </div>
-
-                <div class="input-group">
-                    <label class="input-label">MIN RARITY</label>
-                    <select id="rarity-select">
-                        <option value="">Any Rarity</option>
-                        <option value="COMMON">Common+</option>
-                        <option value="UNCOMMON">Uncommon+</option>
-                        <option value="RARE">Rare+</option>
-                        <option value="EPIC">Epic+</option>
-                        <option value="LEGENDARY">Legendary+</option>
-                        <option value="MYTHIC">Mythic</option>
-                    </select>
-                </div>
-
-                <button id="add-target-btn" class="btn btn-primary">
-                    <span class="btn-icon">+</span>
-                    Add Watch
+    <div class="app-container">
+        <!-- Sidebar / Active Targets -->
+        <aside class="sidebar">
+            <div class="brand">
+                <button id="sidebar-toggle" class="sidebar-toggle-btn" aria-label="Toggle Sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
                 </button>
+                <div class="brand-icon">🎯</div>
+                <div class="brand-info">
+                    <h1>NFT Sniper</h1>
+                    <span class="pro-badge">PRO</span>
+                </div>
             </div>
 
-            <div id="active-targets-list" class="active-targets-list">
-                <!-- Active targets will be rendered here -->
+            <div class="sidebar-section">
+                <h3>Active Watches</h3>
+                <div id="active-targets-list" class="active-targets-list" role="list">
+                    <!-- Active targets will be rendered here dynamically -->
+                </div>
             </div>
-        </header>
 
-        <div class="main-content">
-            <!-- Live Feed -->
-            <section class="feed-panel">
+            <div class="sidebar-footer">
+                <div class="status-compact">
+                    <span id="client-status" class="status disconnected">Disconnected</span>
+                </div>
+                <div class="stats-compact">
+                    <div id="stats-display" class="stats-value">
+                        <span title="Cached Listings">📦 0</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Control Bar -->
+            <header class="control-bar">
+                <div class="control-group collection-group">
+                    <div class="input-wrapper">
+                        <label>Collection</label>
+                        <select id="collection-select">
+                            <option value="" disabled selected>Select Collection...</option>
+                        </select>
+                    </div>
+
+
+                </div>
+
+                <div class="control-group settings-group">
+                    <div class="input-wrapper small">
+                        <label>Max Price</label>
+                        <input type="number" id="price-max" placeholder="SOL" step="0.1" min="0" />
+                    </div>
+
+                    <div class="input-wrapper">
+                        <label>Min Rarity</label>
+                        <select id="rarity-select">
+                            <option value="">Any Rarity</option>
+                            <option value="COMMON">Common+</option>
+                            <option value="UNCOMMON">Uncommon+</option>
+                            <option value="RARE">Rare+</option>
+                            <option value="EPIC">Epic+</option>
+                            <option value="LEGENDARY">Legendary+</option>
+                            <option value="MYTHIC">Mythic</option>
+                        </select>
+                    </div>
+
+                    <button id="add-target-btn" class="btn btn-primary">
+                        <span class="btn-icon">+</span> Watch
+                    </button>
+                </div>
+            </header>
+
+            <!-- Live Feed Section -->
+            <section class="feed-section">
                 <div class="feed-header">
-                    <h2>📡 Live Listings</h2>
-                    <button id="clear-feed-btn" class="btn-small">Clear Feed</button>
+                    <h2>Live Feed</h2>
+                    <button id="clear-feed-btn" class="btn-text">Clear</button>
                 </div>
 
                 <div id="listings-feed" class="listings-feed">
-                    <p class="empty-state">Waiting for listings...</p>
+                    <div class="empty-state">
+                        <span class="empty-icon">📡</span>
+                        <p>Waiting for new listings...</p>
+                    </div>
                 </div>
             </section>
-        </div>
+        </main>
     </div>
 
     <script src="app.js"></script>
