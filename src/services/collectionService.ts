@@ -82,7 +82,6 @@ export class CollectionService {
         return db[mint];
     }
 
-    // Helper to check if a mint belongs to ANY loaded collection
     public findCollectionForMint(mint: string): string | undefined {
         for (const [symbol, db] of this.itemDatabases.entries()) {
             if (db[mint]) {
@@ -90,5 +89,22 @@ export class CollectionService {
             }
         }
         return undefined;
+    }
+
+    public saveCollections() {
+        try {
+            const collectionsPath = path.join(this.dataDir, 'collections.json');
+            fs.writeFileSync(collectionsPath, JSON.stringify(this.collections, null, 2), 'utf-8');
+        } catch (error) {
+            console.error('[CollectionService] Error saving collections:', error);
+        }
+    }
+
+    public updateCollection(symbol: string, updates: Partial<CollectionMetadata>) {
+        const col = this.collections.find(c => c.symbol === symbol);
+        if (col) {
+            Object.assign(col, updates);
+            this.saveCollections();
+        }
     }
 }

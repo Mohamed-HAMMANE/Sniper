@@ -340,6 +340,9 @@ setInterval(async () => {
       // Record History
       await historyService.addPoint(target.symbol, newFloor);
 
+      // Persist to collections.json
+      collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
+
       // Broadcast update
       // Format: { symbol: string, floorPrice: number }
       broadcaster.broadcastMessage('floorPriceUpdate', {
