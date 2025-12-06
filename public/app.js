@@ -1,17 +1,18 @@
 // State
 let eventSource = null;
-let currentTarget = null;
-let currentMetadata = null;
+let activeTargets = [];
+let availableCollections = [];
 
 // Elements
 const clientStatus = document.getElementById('client-status');
 const statsDisplay = document.getElementById('stats-display');
-// targetDisplay removed
 const listingsFeed = document.getElementById('listings-feed');
-const setTargetBtn = document.getElementById('set-target-btn');
 const clearFeedBtn = document.getElementById('clear-feed-btn');
-const collectionSymbolInput = document.getElementById('collection-symbol');
-const priceMaxInput = document.getElementById('price-max');
+const activeTargetsList = document.getElementById('active-targets-list');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebar = document.querySelector('.sidebar');
+const addCollectionToggle = document.getElementById('add-collection-toggle');
+const collectionListContainer = document.getElementById('collection-list-container');
 
 // Audio for notifications
 const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=');
@@ -26,14 +27,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup event listeners
 function setupEventListeners() {
-  setTargetBtn.addEventListener('click', setTarget);
   clearFeedBtn.addEventListener('click', clearFeed);
 
-  // Allow Enter key in inputs
-  [collectionSymbolInput, priceMaxInput].forEach(input => {
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') setTarget();
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
     });
+  }
+
+  // Toggle Add Collection Widget
+  if (addCollectionToggle) {
+    addCollectionToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const widget = addCollectionToggle.parentElement;
+      const list = document.getElementById('collection-list-container');
+      widget.classList.toggle('open');
+      list.classList.toggle('hidden');
+    });
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (addCollectionToggle && !addCollectionToggle.contains(e.target) && !collectionListContainer.contains(e.target)) {
+      addCollectionToggle.parentElement.classList.remove('open');
+      collectionListContainer.classList.add('hidden');
+    }
   });
 }
 
@@ -58,6 +76,34 @@ function connectSSE() {
       console.log('[SSE] Connection confirmed, client ID:', message.clientId);
     } else if (message.type === 'listing') {
       handleNewListing(message.data);
+    } else if (message.type === 'listing-update') {
+      handleListingUpdate(message.data);
+    } else if (message.type === 'floorPriceUpdate') {
+      const { symbol, floorPrice } = message.data;
+      // Update local state
+      const colMeta = availableCollections.find(c => c.symbol === symbol);
+      if (colMeta) {
+        colMeta.floorPrice = floorPrice;
+      }
+      // Only re-render if we aren't currently editing (focus check could be added if needed)
+      // For now, minimal interruption: just update text if element exists
+      const fpEl = document.querySelector(`.target-tag[data-symbol="${symbol}"] .target-floor`);
+      if (fpEl) {
+        fpEl.textContent = `FP: ${Number(floorPrice).toFixed(3)} SOL`;
+      }
+
+      // Also update the dropdown list if it exists
+      // The image is the first child, info div is second, inside info div span is second child
+      // Simpler to find by text content or re-render, but let's try a robust selector if possible
+      // Or just lookup by iterating since we don't have IDs there
+      const collectionItems = document.querySelectorAll('.collection-item');
+      collectionItems.forEach(item => {
+        const nameEl = item.querySelector('.collection-name');
+        if (nameEl && colMeta && nameEl.textContent === colMeta.name) { // Added colMeta check
+          const fpSpan = item.querySelector('.collection-fp');
+          if (fpSpan) fpSpan.textContent = `FP: ${Number(floorPrice).toFixed(2)}`;
+        }
+      });
     }
   };
 
@@ -65,8 +111,6 @@ function connectSSE() {
     clientStatus.textContent = 'Disconnected';
     clientStatus.className = 'status disconnected';
     console.error('[SSE] Connection error:', error);
-
-    // EventSource will auto-reconnect
   };
 }
 
@@ -75,12 +119,107 @@ async function loadConfig() {
   try {
     const response = await fetch('/api/config');
     const config = await response.json();
-    currentTarget = config.target;
-    currentMetadata = config.metadata;
-    renderTarget();
+    activeTargets = config.targets || [];
+    availableCollections = config.collections || [];
+
+    renderCollectionWidget();
+    renderActiveTargets();
   } catch (error) {
     console.error('Error loading config:', error);
   }
+}
+
+function renderCollectionWidget() {
+  collectionListContainer.innerHTML = '';
+
+  // Sort collections alphabetically
+  availableCollections.sort((a, b) => a.name.localeCompare(b.name));
+
+  availableCollections.forEach(col => {
+    const item = document.createElement('div');
+    item.className = 'collection-item';
+    item.onclick = () => addTarget(col.symbol);
+
+    item.innerHTML = `
+        <img src="${col.image}" alt="${col.name}">
+        <div class="collection-info">
+            <span class="collection-name">${col.name}</span>
+            <span class="collection-fp">FP: ${col.floorPrice ? col.floorPrice.toFixed(2) : '-.--'}</span>
+        </div>
+    `;
+    collectionListContainer.appendChild(item);
+  });
+}
+
+function renderActiveTargets() {
+  activeTargetsList.innerHTML = '';
+
+  activeTargets.forEach(target => {
+    const colMeta = availableCollections.find(c => c.symbol === target.symbol);
+    const name = colMeta ? colMeta.name : target.symbol;
+    const image = colMeta ? colMeta.image : '';
+    const floorPrice = colMeta && colMeta.floorPrice !== undefined ? colMeta.floorPrice : null;
+
+    const tag = document.createElement('div');
+    tag.className = 'target-tag';
+    tag.dataset.symbol = target.symbol;
+
+    let imageHTML = '';
+    if (image) {
+      imageHTML = `<img src="${image}" alt="${name}" class="target-image" />`;
+    } else {
+      imageHTML = `<div class="target-image-placeholder"></div>`;
+    }
+
+    let floorHTML = '';
+    // Always render separate floor span for updates
+    const initialFloor = floorPrice !== null ? `FP: ${Number(floorPrice).toFixed(3)} SOL` : 'FP: -.-';
+    floorHTML = `<span class="target-floor">${initialFloor}</span>`;
+
+    tag.innerHTML = `
+      ${imageHTML}
+      <div class="target-info">
+        <div class="target-header">
+            <span class="target-name">${name}</span>
+            <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Stop Watching">×</button>
+        </div>
+        <div class="target-details">
+            ${floorHTML}
+            <div class="edit-input-group" style="margin-left: auto;">
+                <span class="edit-label"><</span>
+                <input type="number" 
+                    value="${target.priceMax}" 
+                    class="inline-input" 
+                    step="0.1" 
+                    onchange="updateTarget('${target.symbol}', 'priceMax', this.value)"
+                />
+                <span class="edit-label">SOL</span>
+            </div>
+        </div>
+        
+        <!-- Inline Editing Row -->
+        <div class="target-edit-row">
+            <select class="inline-select rarity-select ${target.minRarity ? target.minRarity.toLowerCase() : 'common'}"
+                style="flex: 1;"
+                onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.className = 'inline-select rarity-select ' + this.value.toLowerCase();">
+                <option value="COMMON" ${target.minRarity === 'COMMON' ? 'selected' : ''}>COMMON</option>
+                <option value="UNCOMMON" ${target.minRarity === 'UNCOMMON' ? 'selected' : ''}>UNCOMMON</option>
+                <option value="RARE" ${target.minRarity === 'RARE' ? 'selected' : ''}>RARE</option>
+                <option value="EPIC" ${target.minRarity === 'EPIC' ? 'selected' : ''}>EPIC</option>
+                <option value="LEGENDARY" ${target.minRarity === 'LEGENDARY' ? 'selected' : ''}>LEGENDARY</option>
+                <option value="MYTHIC" ${target.minRarity === 'MYTHIC' ? 'selected' : ''}>MYTHIC</option>
+            </select>
+
+            <select class="inline-select" style="width: 70px;"
+                onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
+                <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
+                <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>ADD</option>
+            </select>
+        </div>
+      </div>
+    `;
+    activeTargetsList.appendChild(tag);
+  });
 }
 
 // Load stats
@@ -88,130 +227,109 @@ async function loadStats() {
   try {
     const response = await fetch('/api/stats');
     const stats = await response.json();
-    statsDisplay.innerHTML = `<span title="Cache Size">📦 ${stats.cacheSize}</span> <span class="divider">|</span> <span title="Connected Clients">👥 ${stats.connectedClients}</span>`;
+    statsDisplay.innerHTML = `<span title="Cached Listings">📦 ${stats.cacheSize}</span>`;
   } catch (error) {
     console.error('Error loading stats:', error);
   }
 
-  // Refresh stats every 5 seconds
   setTimeout(loadStats, 5000);
 }
 
-// Render target (Updates Inputs & Button State)
-function renderTarget() {
-  const btnIcon = setTargetBtn.querySelector('.btn-icon');
-  const btnText = setTargetBtn.querySelector('.btn-text');
-
-  // Ensure Stop button exists
-  let stopBtn = document.getElementById('stop-btn');
-  if (!stopBtn) {
-    stopBtn = document.createElement('button');
-    stopBtn.id = 'stop-btn';
-    stopBtn.className = 'btn-stop';
-    stopBtn.innerHTML = '<span class="btn-icon">■</span><span class="btn-text">Stop</span>';
-    stopBtn.onclick = removeTarget;
-    stopBtn.style.display = 'none'; // Hidden by default
-
-    // Append after start button
-    setTargetBtn.parentNode.appendChild(stopBtn);
+// Add target with DEFAULTS
+async function addTarget(symbol) {
+  // Check if already active
+  if (activeTargets.find(t => t.symbol === symbol)) {
+    // Maybe flash the existing card?
+    const card = document.querySelector(`.target-tag[data-symbol="${symbol}"]`);
+    if (card) {
+      card.style.borderColor = 'var(--color-success)';
+      setTimeout(() => card.style.borderColor = '', 500);
+    }
+    return; // Do nothing if already added
   }
 
-  if (!currentTarget) {
-    // No target active
-    setTargetBtn.disabled = false;
-    if (btnIcon) btnIcon.textContent = '▶';
-    if (btnText) btnText.textContent = 'Start Sniping';
-    stopBtn.style.display = 'none';
-
-    return;
-  }
-
-  // Target active
-  collectionSymbolInput.value = currentTarget.symbol;
-  priceMaxInput.value = currentTarget.priceMax;
-
-  setTargetBtn.disabled = false;
-  setTargetBtn.innerHTML = '<span class="btn-icon">⟳</span> Update Target';
-  if (stopBtn) stopBtn.style.display = 'inline-flex';
-}
-
-// Set target
-async function setTarget() {
-  const symbol = collectionSymbolInput.value.trim().toLowerCase();
-  const priceMax = parseFloat(priceMaxInput.value);
-
-  if (!symbol || isNaN(priceMax)) {
-    alert('Please fill in all fields with valid values');
-    return;
-  }
-
-  if (priceMax < 0) {
-    alert('Invalid price');
-    return;
-  }
-
-  const originalHTML = setTargetBtn.innerHTML;
-  setTargetBtn.disabled = true;
-  setTargetBtn.innerHTML = '<span class="btn-icon">⏳</span> Saving...';
+  // Defaults
+  const priceMax = 1000;
+  const minRarity = 'COMMON';
+  const rarityType = 'statistical';
 
   try {
     const response = await fetch('/api/target', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, priceMax })
+      body: JSON.stringify({ symbol, priceMax, minRarity, rarityType })
     });
 
     if (response.ok) {
-      // Reload config
-      await loadConfig();
-    } else {
-      alert('Failed to set target');
-      setTargetBtn.disabled = false;
-      setTargetBtn.innerHTML = originalHTML;
+      const data = await response.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
+      // Hide dropdown after adding
+      addCollectionToggle.parentElement.classList.remove('open');
+      collectionListContainer.classList.add('hidden');
     }
   } catch (error) {
-    console.error('Error setting target:', error);
-    alert('Error setting target');
-    setTargetBtn.disabled = false;
-    setTargetBtn.innerHTML = originalHTML;
+    console.error('Error adding target:', error);
+  }
+}
+
+// Update Target (Inline Edit)
+window.updateTarget = async function (symbol, field, value) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  if (!target) return;
+
+  // Update local immediately for responsiveness
+  if (field === 'priceMax') target.priceMax = parseFloat(value);
+  if (field === 'minRarity') target.minRarity = value;
+  if (field === 'rarityType') target.rarityType = value;
+
+  try {
+    // Send full updated object
+    const response = await fetch('/api/target', {
+      method: 'POST', // Use POST as upsert
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: target.symbol,
+        priceMax: target.priceMax,
+        minRarity: target.minRarity,
+        rarityType: target.rarityType
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Failed to update target');
+    }
+  } catch (e) {
+    console.error('Error updating target:', e);
   }
 }
 
 // Remove target
-async function removeTarget() {
-  if (!confirm(`Stop sniping?`)) {
+window.removeTarget = async function (symbol) {
+  if (!confirm(`Stop watching this collection?`)) {
     return;
   }
 
   try {
-    const response = await fetch(`/api/target`, {
+    const response = await fetch(`/api/target/${symbol}`, {
       method: 'DELETE'
     });
 
     if (response.ok) {
-      // Clear local state
-      currentTarget = null;
-      currentMetadata = null;
-
-      // Reset UI
-      renderTarget();
-
-      // Clear inputs
-      collectionSymbolInput.value = '';
-      priceMaxInput.value = '';
+      const data = await response.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
     } else {
-      alert('Failed to stop sniping');
+      alert('Failed to remove target');
     }
   } catch (error) {
-    console.error('Error stopping sniping:', error);
-    alert('Error stopping sniping');
+    console.error('Error removing target:', error);
+    alert('Error removing target');
   }
 }
 
 // Handle new listing
 function handleNewListing(listing) {
-  console.log('[Listing]', listing);
-
   // Remove empty state if present
   const emptyState = listingsFeed.querySelector('.empty-state');
   if (emptyState) {
@@ -225,15 +343,26 @@ function handleNewListing(listing) {
     console.log('Audio not supported');
   }
 
-  // Create listing card
   const card = createListingCard(listing);
-
-  // Prepend to feed
   listingsFeed.insertBefore(card, listingsFeed.firstChild);
 
-  // Limit feed to 20 items (only show most recent)
-  while (listingsFeed.children.length > 20) {
+  // Limit feed to 50 items
+  while (listingsFeed.children.length > 50) {
     listingsFeed.removeChild(listingsFeed.lastChild);
+  }
+}
+
+// Handle listing update
+function handleListingUpdate(update) {
+  const card = listingsFeed.querySelector(`.listing-card[data-mint="${update.mint}"]`);
+
+  if (card) {
+    const titleEl = card.querySelector('.listing-title');
+    if (titleEl) {
+      titleEl.textContent = update.name;
+      titleEl.classList.add('updated');
+      setTimeout(() => titleEl.classList.remove('updated'), 1000);
+    }
   }
 }
 
@@ -252,58 +381,115 @@ function createListingCard(listing) {
   card.className = 'listing-card new';
   card.dataset.timestamp = listing.timestamp;
   card.dataset.mint = listing.mint;
+  card.setAttribute('role', 'article');
 
   // Determine price color
-  // Determine price color
   let priceClass = 'good';
-  if (currentTarget && listing.price > currentTarget.priceMax * 0.9) {
-    priceClass = 'medium';
+  const target = activeTargets.find(t => listing.name && listing.name.toLowerCase().includes(t.symbol.toLowerCase()));
+  if (target && listing.price) {
+    const priceRatio = listing.price / target.priceMax;
+    if (priceRatio > 0.8) priceClass = 'high';
+    else if (priceRatio > 0.5) priceClass = 'medium';
   }
 
   const relativeTime = getRelativeTime(listing.timestamp);
 
+  // Rarity Logic
+  let rarityHTML = '';
+  const primaryRank = listing.rank;
+  const primaryTier = listing.rarity;
+
+  // 1. Primary Badge: [TIER] [#RANK]
+  if (primaryTier) {
+    rarityHTML += `
+      <div class="rarity-pill">
+        <span class="rarity-name ${primaryTier.toLowerCase()}">${primaryTier}</span>
+        <span class="rarity-rank">#${primaryRank}</span>
+      </div>`;
+  }
+
+  // 2. Secondary Compact: "A: #123 U" or "S: #123 U"
+  // Determine if primary is Statistical or Additive
+  let isPrimaryStat = false;
+
+  if (listing.rank_statistical && listing.rank === listing.rank_statistical) {
+    isPrimaryStat = true;
+  }
+
+  let secondaryHTML = '';
+  if (isPrimaryStat) {
+    // Secondary is Additive
+    if (listing.rank_additive) {
+      const tierLetter = listing.tier_additive ? listing.tier_additive.charAt(0).toUpperCase() : '?';
+      secondaryHTML = `<span class="rarity-compact" title="Additive Rarity"><span class="rarity-letter ${listing.tier_additive ? listing.tier_additive.toLowerCase() : ''}">#${listing.rank_additive} ${tierLetter}</span></span>`;
+    }
+  } else {
+    // Secondary is Statistical
+    if (listing.rank_statistical) {
+      const tierLetter = listing.tier_statistical ? listing.tier_statistical.charAt(0).toUpperCase() : '?';
+      secondaryHTML = `<span class="rarity-compact" title="Statistical Rarity"><span class="rarity-letter ${listing.tier_statistical ? listing.tier_statistical.toLowerCase() : ''}">#${listing.rank_statistical} ${tierLetter}</span></span>`;
+    }
+  }
+
+  rarityHTML += secondaryHTML;
+
   card.innerHTML = `
-    <div class="listing-content">
-      <div class="listing-image-wrapper">
-        ${listing.imageUrl ? `<img src="${listing.imageUrl}" alt="${listing.name || 'NFT'}" class="listing-image" loading="lazy">` : '<div class="no-image"></div>'}
+    <div class="listing-image-wrapper">
+      ${listing.imageUrl ?
+      `<img src="${listing.imageUrl}" alt="${listing.name}" class="listing-image" loading="lazy" onerror="this.parentElement.innerHTML='<div class=&quot;no-image&quot;></div>';" />` :
+      '<div class="no-image"></div>'}
+    </div>
+    <div class="listing-info">
+      <div class="listing-title" title="${listing.name}">${escapeHtml(listing.name || 'Unnamed NFT')}</div>
+      <div class="listing-meta">
+        ${rarityHTML}
+        <span>•</span>
+        <span class="listing-time">${relativeTime}</span>
       </div>
-      <div class="listing-info">
-        <div class="listing-title">${listing.name || 'Unnamed NFT'}</div>
-        <div class="listing-collection-name">${listing.collection}</div>
-        <div class="listing-mint-id">Mint: ${listing.mint.substring(0, 6)}...${listing.mint.substring(listing.mint.length - 4)}</div>
-        <div class="listing-timestamp" data-timestamp="${listing.timestamp}">⚡ ${relativeTime}</div>
-      </div>
-      <div class="listing-action-col">
-        <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
-        <a href="${listing.listingUrl}" target="_blank" class="listing-link">View →</a>
-      </div>
+    </div>
+    <div class="listing-action-col">
+      <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
+      <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
     </div>
   `;
 
-  // Remove 'new' class after animation
-  setTimeout(() => {
-    card.classList.remove('new');
-  }, 1000);
-
-  // Mark as potentially stale after 2 minutes
-  setTimeout(() => {
-    card.classList.add('stale');
-  }, 2 * 60 * 1000);
+  setTimeout(() => card.classList.remove('new'), 600);
+  setTimeout(() => card.classList.add('stale'), 2 * 60 * 1000);
 
   return card;
 }
 
-// Update all timestamps every 10 seconds
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Update timestamps
 setInterval(() => {
-  document.querySelectorAll('.listing-timestamp').forEach(el => {
-    const timestamp = parseInt(el.dataset.timestamp);
+  document.querySelectorAll('.listing-card').forEach(card => {
+    const timestamp = parseInt(card.dataset.timestamp);
     if (timestamp) {
-      el.textContent = '⚡ ' + getRelativeTime(timestamp);
+      const timeSpan = card.querySelector('.listing-time');
+      if (timeSpan) timeSpan.textContent = getRelativeTime(timestamp);
     }
   });
 }, 10000);
 
-// Clear feed
-function clearFeed() {
-  listingsFeed.innerHTML = '<p class="empty-state">Waiting for listings...</p>';
+async function clearFeed() {
+  try {
+    const response = await fetch('/api/feed/clear', { method: 'POST' });
+    if (response.ok) {
+      listingsFeed.innerHTML = `
+        <div class="empty-state">
+            <span class="empty-icon">📡</span>
+            <p>Waiting for new listings...</p>
+        </div>
+      `;
+    } else {
+      console.error('Failed to clear feed history on server');
+    }
+  } catch (error) {
+    console.error('Error clearing feed:', error);
+  }
 }

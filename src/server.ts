@@ -1,10 +1,11 @@
 import express from 'express';
 import * as path from 'path';
 import { ConfigManager } from './config/configManager';
-import { MagicEdenPoller } from './pollers/magicEdenPoller';
 import { ListingCache } from './services/listingCache';
 import { SSEBroadcaster } from './api/sseEndpoint';
+import { CollectionService } from './services/collectionService';
 import { TargetCollection, CollectionMetadata, Listing } from './types';
+import { decodeBase58 } from './utils/base58';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,13 +16,12 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Initialize services
 const configManager = new ConfigManager();
-const poller = new MagicEdenPoller();
 const cache = new ListingCache(60); // Cache for 60 minutes
 const broadcaster = new SSEBroadcaster();
+const collectionService = new CollectionService();
 
 // State
-let currentMetadata: CollectionMetadata | null = null;
-let isWarmedUp = false;
+// let currentMetadata: CollectionMetadata | null = null; // No longer needed as global state
 
 // SSE endpoint
 app.get('/api/listings-stream', (req, res) => {
@@ -31,52 +31,47 @@ app.get('/api/listings-stream', (req, res) => {
 // Get config
 app.get('/api/config', (req, res) => {
   res.json({
-    target: configManager.getTarget(),
-    metadata: currentMetadata
+    targets: configManager.getTargets(),
+    collections: collectionService.getCollections()
   });
 });
 
-// Set target collection
+// Add target collection
 app.post('/api/target', async (req, res) => {
-  const { symbol, priceMax } = req.body;
+  const { symbol, priceMax, minRarity } = req.body;
 
   if (!symbol || priceMax === undefined) {
     return res.status(400).json({ error: 'Missing required fields: symbol, priceMax' });
   }
 
   const target: TargetCollection = {
-    symbol: symbol.toLowerCase(),
-    priceMax: Number(priceMax)
+    symbol: symbol,
+    priceMax: Number(priceMax),
+    minRarity: minRarity,
+    rarityType: req.body.rarityType || 'statistical'
   };
 
-  configManager.setTarget(target);
+  configManager.addTarget(target);
 
-  // Reset state
-  isWarmedUp = false;
-  cache.clear();
+  // Clear cache/history if needed, or keep it to support multiple streams
+  // cache.clear(); 
+  // broadcaster.clearHistory();
+
+  res.json({ success: true, targets: configManager.getTargets() });
+});
+
+// Clear feed history
+app.post('/api/feed/clear', (req, res) => {
   broadcaster.clearHistory();
-
-  // Fetch metadata immediately
-  try {
-    currentMetadata = await poller.getCollectionMetadata(target.symbol);
-  } catch (e) {
-    console.error('Failed to fetch metadata:', e);
-  }
-
-  // Restart polling immediately
-  stopPolling();
-  startPolling();
-
-  res.json({ success: true, target, metadata: currentMetadata });
+  res.json({ success: true, message: 'Feed history cleared' });
 });
 
 // Remove target
-app.delete('/api/target', (req, res) => {
-  configManager.removeTarget();
-  currentMetadata = null;
-  isWarmedUp = false;
-  stopPolling();
-  res.json({ success: true });
+// Remove target
+app.delete('/api/target/:symbol', (req, res) => {
+  const { symbol } = req.params;
+  configManager.removeTarget(symbol);
+  res.json({ success: true, targets: configManager.getTargets() });
 });
 
 // Get stats
@@ -84,191 +79,276 @@ app.get('/api/stats', (req, res) => {
   res.json({
     cacheSize: cache.getCacheSize(),
     connectedClients: broadcaster.getClientCount(),
-    target: configManager.getTarget()?.symbol || 'None'
+    activeTargets: configManager.getTargets().length
   });
 });
 
-// Main polling loop
-async function pollLoop() {
-  const target = configManager.getTarget();
-
-  if (!target) {
-    // console.log('[Poller] No target configured. Waiting...');
-    return;
-  }
+// Webhook Endpoint for Helius
+app.post('/webhook', (req, res) => {
+  // Acknowledge immediately
+  res.status(200).send('OK');
 
   try {
-    let currentListings: Listing[] = [];
+    const notifications = req.body;
+    if (!Array.isArray(notifications)) return;
 
-    // 1. Warmup Phase: Fetch Snapshot
-    if (!isWarmedUp) {
-      // Fetch listings from Magic Eden (limit=100, sort=updatedAt)
-      currentListings = await poller.pollCollection(target.symbol);
+    const targets = configManager.getTargets();
+    if (targets.length === 0) return;
 
-      console.log(`[Poller] Initialized cache for ${target.symbol} with ${currentListings.length} listings.`);
-      isWarmedUp = true;
-      console.log('[System] Freshness check disabled - showing all listings');
+    // Rarity Mapping for comparison
+    const rarityOrder: Record<string, number> = {
+      'COMMON': 0,
+      'UNCOMMON': 1,
+      'RARE': 2,
+      'EPIC': 3,
+      'LEGENDARY': 4,
+      'MYTHIC': 5
+    };
 
-      // Fetch recent activities to get accurate timestamps
-      try {
-        console.log('[Poller] Fetching activities to identify fresh listings...');
-        // Wait a bit to avoid rate limits
-        await new Promise(resolve => setTimeout(resolve, 1000));
+    for (const event of notifications) {
+      if (event.type === 'NFT_LISTING') {
+        const eventData = event.events.nft;
+        const mint = eventData.nfts[0].mint;
+        const priceLamports = eventData.amount;
+        const priceSol = priceLamports / 1_000_000_000;
 
-        const activities = await poller.fetchActivities(target.symbol);
-        const listActivities = activities.filter(a => a.type === 'list');
+        if (priceSol <= 0) continue;
 
-        // Map mint -> timestamp (seconds * 1000)
-        const mintTimestamps = new Map<string, number>();
-        listActivities.forEach(a => {
-          if (a.tokenMint && a.blockTime) {
-            mintTimestamps.set(a.tokenMint, a.blockTime * 1000);
-          }
-        });
+        const seller = eventData.seller;
 
-        const TEN_MINUTES = 10 * 60 * 1000;
-        const now = Date.now();
-        let freshCount = 0;
+        // Debug: Check if mint exists in any collection
+        const foundCollection = collectionService.findCollectionForMint(mint);
+        //console.log(`[Webhook] Received mint: ${mint}, Found in collection: ${foundCollection || 'NONE'}`);
 
-        // Reverse to broadcast Oldest -> Newest so frontend prepends correctly (Newest ends up at top)
-        const sortedListings = [...currentListings].reverse();
+        // Check if this mint belongs to ANY active target collection
+        // We need to check each target because different targets might have different criteria
+        for (const target of targets) {
+          // 1. Check if item is in this collection's database
+          const itemMeta = collectionService.getItem(target.symbol, mint);
 
-        for (const listing of sortedListings) {
-          // Check if we have a timestamp from activities
-          const activityTime = mintTimestamps.get(listing.mint);
+          // If not in this collection, skip
+          if (!itemMeta) continue;
 
-          if (activityTime) {
-            listing.timestamp = activityTime;
-          }
-
-          // Broadcast if it matches criteria (regardless of age on startup)
-          if (listing.price <= target.priceMax) {
-            broadcaster.broadcastListing(listing);
-            freshCount++;
+          // 2. Price Check
+          if (priceSol > target.priceMax) {
+            //console.log(`[Webhook] Skipped ${itemMeta.name}: Price ${priceSol} > ${target.priceMax}`);
+            continue;
           }
 
-          // IMPORTANT: Cache ALL listings (even expensive ones) to prevent duplicate alerts
-          // when we switch to activity polling (which might see these items as "new events")
-          cache.addListing(listing);
+          // 3. Rarity Check
+          const rarityType = target.rarityType || 'statistical';
+          let itemTier = '';
+          let itemRank = 0;
+
+          if (rarityType === 'additive') {
+            itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
+            itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
+          } else {
+            // Default to statistical
+            itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+            itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
+          }
+
+          if (target.minRarity && itemTier) {
+            const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+            const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
+
+            if (itemRarityVal < targetRarityVal) {
+              //console.log(`[Webhook] Skipped ${itemMeta.name}: Rarity ${itemTier} < ${target.minRarity} (${rarityType})`);
+              continue;
+            }
+          }
+
+          const listing: Listing = {
+            source: event.source || 'Unknown',
+            mint: mint,
+            price: priceSol,
+            listingUrl: `https://magiceden.io/item-details/${mint}`, // TODO: Adjust based on source
+            timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+            seller: seller,
+            name: itemMeta.name, // Use local name
+            imageUrl: itemMeta.image, // Use local image
+
+            // Primary display (based on selection)
+            rank: itemRank,
+            rarity: itemTier,
+
+            // Full data
+            rank_additive: itemMeta.rank_additive,
+            tier_additive: itemMeta.tier_additive,
+            score_additive: itemMeta.score_additive,
+
+            rank_statistical: itemMeta.rank_statistical,
+            tier_statistical: itemMeta.tier_statistical,
+            score_statistical: itemMeta.score_statistical
+          };
+          //console.log(`[Webhook] 🔔 SNIPE! ${listing.name} (${listing.rarity} - ${rarityType}) for ${listing.price} SOL`);
+          broadcaster.broadcastListing(listing);
+
+          // Break after finding a match? Or allow multiple matches? 
+          // Usually one item belongs to one collection, so break is safe.
+          break;
+        }
+      } else if (event.type === 'UNKNOWN' && event.accountData) {
+        // Handle UNKNOWN events (often unparsed listings)
+        let price = 0;
+        let isMagicEdenListing = false;
+
+        // Try to parse Magic Eden V2 instruction
+        if (event.instructions) {
+          const ME_V2_PROGRAM_ID = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
+          const SELL_DISCRIMINATOR = '1ff3f73b8653a5da'; // First 8 bytes of sighash
+
+          for (const ix of event.instructions) {
+            if (ix.programId === ME_V2_PROGRAM_ID && ix.data) {
+              try {
+                const decodedData = decodeBase58(ix.data);
+                const hexData = Buffer.from(decodedData).toString('hex');
+
+                if (hexData.startsWith(SELL_DISCRIMINATOR)) {
+                  // Next 8 bytes are price (little endian uint64)
+                  // Discriminator is 8 bytes (16 hex chars)
+                  // Price starts at index 16
+                  const priceHex = hexData.substring(16, 32);
+                  if (priceHex.length === 16) {
+                    // Convert little endian hex to number
+                    // e.g. 20beec1b00000000 -> 1becbe20 -> 468483616
+                    const buffer = Buffer.from(priceHex, 'hex');
+                    const priceLamports = Number(buffer.readBigUInt64LE(0));
+                    price = priceLamports / 1_000_000_000;
+                    isMagicEdenListing = true;
+                    // console.log(`[Webhook] Decoded ME V2 Price: ${price} SOL`);
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.error('Error decoding instruction data:', e);
+              }
+            }
+          }
         }
 
-        if (freshCount > 0) {
-          console.log(`[Poller] Found ${freshCount} listings on startup!`);
-        } else {
-          console.log('[Poller] No matching listings found on startup.');
-        }
+        for (const accountInfo of event.accountData) {
+          const potentialMint = accountInfo.account;
 
-      } catch (e) {
-        console.error('[Poller] Error processing startup activities:', e);
-      }
+          // Check if this account is a known mint in any of our loaded collections
+          const collectionSymbol = collectionService.findCollectionForMint(potentialMint);
 
-      // Try to fetch metadata if we don't have it
-      if (!currentMetadata) {
-        try {
-          // Wait 2 seconds before fetching metadata
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          currentMetadata = await poller.getCollectionMetadata(target.symbol);
-        } catch (e) { console.error('Error fetching metadata', e); }
-      }
-      return;
-    }
+          if (collectionSymbol) {
+            // Check if we are currently watching this collection
+            const target = targets.find(t => t.symbol === collectionSymbol);
+            if (target) {
+              const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
+              if (itemMeta) {
+                // Rarity Check
+                const rarityType = target.rarityType || 'statistical';
+                let itemTier = '';
+                let itemRank = 0;
 
-    // 2. Monitoring Phase: Use Activities
-    // Switch to activities for better precision and re-list detection
-    currentListings = await poller.pollActivitiesAsListings(target.symbol);
+                if (rarityType === 'additive') {
+                  itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
+                  itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
+                } else {
+                  itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+                  itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
+                }
 
-    // Filter new listings only
-    const newListings = cache.filterNewListings(currentListings);
+                if (target.minRarity && itemTier) {
+                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+                  const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
 
-    if (newListings.length === 0) {
-      // Log every 30 seconds if no new listings
-      // if (pollCount % 30 === 0) {
-      //   console.log(`[Poller] Still monitoring ${target.symbol}... (0 new events)`);
-      // }
-      return;
-    }
+                  if (itemRarityVal < targetRarityVal) {
+                    continue;
+                  }
+                }
 
-    console.log(`[Poller] Detected ${newListings.length} new listing events`);
+                // If we found a price, check it against max price
+                if (price <= 0 || price > target.priceMax) {
+                  continue;
+                }
 
-    // Filter by max price
-    const matchingListings = newListings.filter(l => l.price <= target.priceMax);
+                const listing: Listing = {
+                  source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
+                  mint: potentialMint,
+                  price: price,
+                  listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
+                  timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+                  seller: event.feePayer, // Assuming fee payer is the seller/initiator
+                  name: itemMeta.name,
+                  imageUrl: itemMeta.image,
 
-    if (matchingListings.length > 0) {
-      console.log(`[Alert] ${matchingListings.length} listings match max price ${target.priceMax} SOL`);
+                  // Primary display
+                  rank: itemRank,
+                  rarity: itemTier,
 
-      // Broadcast to all connected clients (Oldest -> Newest)
-      // Activities are returned Newest -> Oldest by API.
-      // We reverse them so the broadcast order is chronological (Oldest first).
-      matchingListings.reverse();
+                  // Full data
+                  rank_additive: itemMeta.rank_additive,
+                  tier_additive: itemMeta.tier_additive,
+                  score_additive: itemMeta.score_additive,
 
-      // Fetch names concurrently for these relevant listings
-      await Promise.all(matchingListings.map(async (listing) => {
-        try {
-          const name = await poller.getTokenName(listing.mint);
-          if (name) {
-            listing.name = name;
-            console.log(`[Metadata] Fetched name for ${listing.mint}: ${name}`);
+                  rank_statistical: itemMeta.rank_statistical,
+                  tier_statistical: itemMeta.tier_statistical,
+                  score_statistical: itemMeta.score_statistical
+                };
+
+                // console.log(`[Webhook] Found UNKNOWN listing: ${listing.name} for ${listing.price} SOL`);
+                broadcaster.broadcastListing(listing);
+                break; // Found the NFT, stop checking other accounts
+              }
+            }
           }
-        } catch (e) {
-          console.error(`[Metadata] Failed to fetch name for ${listing.mint}`, e);
         }
-      }));
-
-      for (const listing of matchingListings) {
-        broadcaster.broadcastListing(listing);
+      } else {
+        console.log('------------------------------');
+        console.log(event);
+        console.log('------------------------------');
       }
     }
-
   } catch (error) {
-    console.error(`[Poller] Error polling ${target.symbol}:`, error);
+    console.error('[Webhook] Error processing payload:', error);
   }
-}
+});
 
-// Start polling
-let isPolling = false;
-let pollingTimeout: NodeJS.Timeout;
+// Background Floor Price Integration
+import { FloorPriceManager } from './services/floorPriceManager';
+import { HistoryService } from './services/historyService';
 
-async function startPolling() {
-  if (isPolling) return;
-  isPolling = true;
-  console.log('[Poller] Starting polling loop...');
+const floorPriceManager = new FloorPriceManager();
+const historyService = new HistoryService();
 
-  await pollLoop();
-}
+// History API
+app.get('/api/history/:symbol', (req, res) => {
+  const symbol = req.params.symbol;
+  const history = historyService.getHistory(symbol);
+  res.json({ symbol, history });
+});
 
-function stopPolling() {
-  isPolling = false;
-  if (pollingTimeout) {
-    clearTimeout(pollingTimeout);
+// Refresh Floor Prices every 60 seconds
+setInterval(async () => {
+  const targets = configManager.getTargets();
+  if (targets.length === 0) return;
+
+  // console.log('[FloorPrice] Refreshing floor prices...');
+
+  for (const target of targets) {
+    // Add small delay to avoid rate limits
+    await new Promise(r => setTimeout(r, 1000));
+
+    const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
+    if (newFloor !== null) {
+
+      // Record History
+      await historyService.addPoint(target.symbol, newFloor);
+
+      // Broadcast update
+      // Format: { symbol: string, floorPrice: number }
+      broadcaster.broadcastMessage('floorPriceUpdate', {
+        symbol: target.symbol,
+        floorPrice: newFloor
+      });
+    }
   }
-  console.log('[Poller] Polling stopped');
-}
-
-let pollCount = 0;
-// Wrap pollLoop to handle scheduling
-const originalPollLoop = pollLoop;
-// @ts-ignore
-pollLoop = async function () {
-  if (!isPolling) return;
-
-  const start = Date.now();
-  await originalPollLoop();
-
-  pollCount++;
-  // if (pollCount % 10 === 0) {
-  //   console.log(`[Poller] Heartbeat: Still sniping... (Cycle ${pollCount})`);
-  // }
-
-  const duration = Date.now() - start;
-
-  // Calculate next delay (aim for 1s interval, but respect execution time)
-  // If we hit rate limit (duration > 1000), we naturally slow down
-  const delay = Math.max(1000 - duration, 100); // Minimum 100ms delay
-
-  if (isPolling) {
-    pollingTimeout = setTimeout(pollLoop, delay);
-  }
-}
+}, 60 * 1000);
 
 // Start server
 app.listen(PORT, () => {
@@ -277,21 +357,17 @@ app.listen(PORT, () => {
   console.log(`=================================`);
   console.log(`Dashboard: http://localhost:${PORT}`);
   console.log(`API: http://localhost:${PORT}/api`);
+  console.log(`Webhook: http://localhost:${PORT}/webhook`);
   console.log(`=================================\n`);
-
-  // Start polling after server is up
-  startPolling();
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
-  stopPolling();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('\n[Server] Shutting down...');
-  stopPolling();
   process.exit(0);
 });

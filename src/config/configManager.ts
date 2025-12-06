@@ -22,7 +22,7 @@ export class ConfigManager {
     }
 
     // Return default config
-    return {};
+    return { targets: [] };
   }
 
   public saveConfig(): void {
@@ -38,17 +38,24 @@ export class ConfigManager {
     return this.config;
   }
 
-  public getTarget(): TargetCollection | undefined {
-    return this.config.target;
+  public getTargets(): TargetCollection[] {
+    return this.config.targets || [];
   }
 
-  public setTarget(target: TargetCollection): void {
-    this.config.target = target;
+  public addTarget(target: TargetCollection): void {
+    if (!this.config.targets) {
+      this.config.targets = [];
+    }
+
+    // Remove existing target for same symbol if exists (update)
+    this.config.targets = this.config.targets.filter(t => t.symbol !== target.symbol);
+    this.config.targets.push(target);
     this.saveConfig();
   }
 
-  public removeTarget(): void {
-    delete this.config.target;
+  public removeTarget(symbol: string): void {
+    if (!this.config.targets) return;
+    this.config.targets = this.config.targets.filter(t => t.symbol !== symbol);
     this.saveConfig();
   }
 }
