@@ -156,7 +156,9 @@ function renderActiveTargets() {
 
     let floorHTML = '';
     if (floorPrice !== null) {
-      floorHTML = `<span class="target-floor">FP: ${floorPrice} SOL</span>`;
+      // Limit to 4 decimal places
+      const formattedPrice = Number(floorPrice).toFixed(3);
+      floorHTML = `<span class="target-floor">FP: ${formattedPrice} SOL</span>`;
     }
 
     tag.innerHTML = `
