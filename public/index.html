@@ -30,6 +30,20 @@
             </div>
 
             <div class="sidebar-section">
+                <!-- Add Collection Widget -->
+                <div class="add-collection-widget">
+                    <button id="add-collection-toggle" class="add-collection-btn">
+                        <span>+ Add Collection</span>
+                        <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                    <div id="collection-list-container" class="collection-list-dropdown hidden">
+                        <!-- Collections will be rendered here -->
+                    </div>
+                </div>
+
                 <h3>Active Watches</h3>
                 <div id="active-targets-list" class="active-targets-list" role="list">
                     <!-- Active targets will be rendered here dynamically -->
@@ -50,51 +64,7 @@
 
         <!-- Main Content Area -->
         <main class="main-content">
-            <!-- Top Control Bar -->
-            <header class="control-bar">
-                <div class="control-group collection-group">
-                    <div class="input-wrapper">
-                        <label>Collection</label>
-                        <select id="collection-select">
-                            <option value="" disabled selected>Select Collection...</option>
-                        </select>
-                    </div>
 
-
-                </div>
-
-                <div class="control-group settings-group">
-                    <div class="input-wrapper small">
-                        <label>Max Price</label>
-                        <input type="number" id="price-max" placeholder="SOL" step="0.1" min="0" />
-                    </div>
-
-                    <div class="input-wrapper">
-                        <label>Min Rarity</label>
-                        <select id="rarity-select">
-                            <option value="">Any Rarity</option>
-                            <option value="COMMON">Common+</option>
-                            <option value="UNCOMMON">Uncommon+</option>
-                            <option value="RARE">Rare+</option>
-                            <option value="EPIC">Epic+</option>
-                            <option value="LEGENDARY">Legendary+</option>
-                            <option value="MYTHIC">Mythic</option>
-                        </select>
-                    </div>
-
-                    <div class="input-wrapper">
-                        <label>Rarity Type</label>
-                        <select id="rarity-type-select">
-                            <option value="statistical" selected>Statistical</option>
-                            <option value="additive">Additive</option>
-                        </select>
-                    </div>
-
-                    <button id="add-target-btn" class="btn btn-primary">
-                        <span class="btn-icon">+</span> Watch
-                    </button>
-                </div>
-            </header>
 
             <!-- Live Feed Section -->
             <section class="feed-section">

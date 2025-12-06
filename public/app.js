@@ -7,17 +7,12 @@ let availableCollections = [];
 const clientStatus = document.getElementById('client-status');
 const statsDisplay = document.getElementById('stats-display');
 const listingsFeed = document.getElementById('listings-feed');
-const addTargetBtn = document.getElementById('add-target-btn');
 const clearFeedBtn = document.getElementById('clear-feed-btn');
-const collectionSelect = document.getElementById('collection-select');
-const priceMaxInput = document.getElementById('price-max');
-const raritySelect = document.getElementById('rarity-select');
-const rarityTypeSelect = document.getElementById('rarity-type-select');
 const activeTargetsList = document.getElementById('active-targets-list');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebar = document.querySelector('.sidebar');
-
-
+const addCollectionToggle = document.getElementById('add-collection-toggle');
+const collectionListContainer = document.getElementById('collection-list-container');
 
 // Audio for notifications
 const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=');
@@ -32,7 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup event listeners
 function setupEventListeners() {
-  addTargetBtn.addEventListener('click', addTarget);
   clearFeedBtn.addEventListener('click', clearFeed);
 
   if (sidebarToggle) {
@@ -41,17 +35,25 @@ function setupEventListeners() {
     });
   }
 
-
-
-  // Allow Enter key in inputs
-  [priceMaxInput].forEach(input => {
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') addTarget();
+  // Toggle Add Collection Widget
+  if (addCollectionToggle) {
+    addCollectionToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const widget = addCollectionToggle.parentElement;
+      const list = document.getElementById('collection-list-container');
+      widget.classList.toggle('open');
+      list.classList.toggle('hidden');
     });
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (addCollectionToggle && !addCollectionToggle.contains(e.target) && !collectionListContainer.contains(e.target)) {
+      addCollectionToggle.parentElement.classList.remove('open');
+      collectionListContainer.classList.add('hidden');
+    }
   });
 }
-
-
 
 // Connect to SSE stream
 function connectSSE() {
@@ -83,9 +85,25 @@ function connectSSE() {
       if (colMeta) {
         colMeta.floorPrice = floorPrice;
       }
-      // Re-render targets to show new price
-      // Optimization: Could target specific element ID, but re-render is cheap for < 10 items
-      renderActiveTargets();
+      // Only re-render if we aren't currently editing (focus check could be added if needed)
+      // For now, minimal interruption: just update text if element exists
+      const fpEl = document.querySelector(`.target-tag[data-symbol="${symbol}"] .target-floor`);
+      if (fpEl) {
+        fpEl.textContent = `FP: ${Number(floorPrice).toFixed(3)} SOL`;
+      }
+
+      // Also update the dropdown list if it exists
+      // The image is the first child, info div is second, inside info div span is second child
+      // Simpler to find by text content or re-render, but let's try a robust selector if possible
+      // Or just lookup by iterating since we don't have IDs there
+      const collectionItems = document.querySelectorAll('.collection-item');
+      collectionItems.forEach(item => {
+        const nameEl = item.querySelector('.collection-name');
+        if (nameEl && colMeta && nameEl.textContent === colMeta.name) { // Added colMeta check
+          const fpSpan = item.querySelector('.collection-fp');
+          if (fpSpan) fpSpan.textContent = `FP: ${Number(floorPrice).toFixed(2)}`;
+        }
+      });
     }
   };
 
@@ -104,30 +122,33 @@ async function loadConfig() {
     activeTargets = config.targets || [];
     availableCollections = config.collections || [];
 
-    renderCollectionOptions();
+    renderCollectionWidget();
     renderActiveTargets();
   } catch (error) {
     console.error('Error loading config:', error);
   }
 }
 
-function renderCollectionOptions() {
-  const currentVal = collectionSelect.value;
-  collectionSelect.innerHTML = '<option value="" disabled selected>Select Collection...</option>';
+function renderCollectionWidget() {
+  collectionListContainer.innerHTML = '';
 
   // Sort collections alphabetically
   availableCollections.sort((a, b) => a.name.localeCompare(b.name));
 
   availableCollections.forEach(col => {
-    const option = document.createElement('option');
-    option.value = col.symbol;
-    option.textContent = col.name;
-    collectionSelect.appendChild(option);
-  });
+    const item = document.createElement('div');
+    item.className = 'collection-item';
+    item.onclick = () => addTarget(col.symbol);
 
-  if (currentVal) {
-    collectionSelect.value = currentVal;
-  }
+    item.innerHTML = `
+        <img src="${col.image}" alt="${col.name}">
+        <div class="collection-info">
+            <span class="collection-name">${col.name}</span>
+            <span class="collection-fp">FP: ${col.floorPrice ? col.floorPrice.toFixed(2) : '-.--'}</span>
+        </div>
+    `;
+    collectionListContainer.appendChild(item);
+  });
 }
 
 function renderActiveTargets() {
@@ -138,14 +159,10 @@ function renderActiveTargets() {
     const name = colMeta ? colMeta.name : target.symbol;
     const image = colMeta ? colMeta.image : '';
     const floorPrice = colMeta && colMeta.floorPrice !== undefined ? colMeta.floorPrice : null;
-    const rarityBadge = target.minRarity ?
-      `<span class="rarity-badge ${target.minRarity.toLowerCase()}">${target.minRarity}</span>` : '';
-    const rarityTypeLabel = target.rarityType === 'statistical' ?
-      `<span class="rarity-type-badge stat">STAT</span>` :
-      `<span class="rarity-type-badge add">ADD</span>`;
 
     const tag = document.createElement('div');
     tag.className = 'target-tag';
+    tag.dataset.symbol = target.symbol;
 
     let imageHTML = '';
     if (image) {
@@ -155,26 +172,51 @@ function renderActiveTargets() {
     }
 
     let floorHTML = '';
-    if (floorPrice !== null) {
-      // Limit to 4 decimal places
-      const formattedPrice = Number(floorPrice).toFixed(3);
-      floorHTML = `<span class="target-floor">FP: ${formattedPrice} SOL</span>`;
-    }
+    // Always render separate floor span for updates
+    const initialFloor = floorPrice !== null ? `FP: ${Number(floorPrice).toFixed(3)} SOL` : 'FP: -.-';
+    floorHTML = `<span class="target-floor">${initialFloor}</span>`;
 
     tag.innerHTML = `
       ${imageHTML}
       <div class="target-info">
         <div class="target-header">
             <span class="target-name">${name}</span>
-            ${rarityBadge}
-            ${rarityTypeLabel}
+            <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Stop Watching">×</button>
         </div>
         <div class="target-details">
-            <span class="target-price">< ${target.priceMax} SOL</span>
             ${floorHTML}
+            <div class="edit-input-group" style="margin-left: auto;">
+                <span class="edit-label"><</span>
+                <input type="number" 
+                    value="${target.priceMax}" 
+                    class="inline-input" 
+                    step="0.1" 
+                    onchange="updateTarget('${target.symbol}', 'priceMax', this.value)"
+                />
+                <span class="edit-label">SOL</span>
+            </div>
+        </div>
+        
+        <!-- Inline Editing Row -->
+        <div class="target-edit-row">
+            <select class="inline-select rarity-select ${target.minRarity ? target.minRarity.toLowerCase() : 'common'}"
+                style="flex: 1;"
+                onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.className = 'inline-select rarity-select ' + this.value.toLowerCase();">
+                <option value="COMMON" ${target.minRarity === 'COMMON' ? 'selected' : ''}>COMMON</option>
+                <option value="UNCOMMON" ${target.minRarity === 'UNCOMMON' ? 'selected' : ''}>UNCOMMON</option>
+                <option value="RARE" ${target.minRarity === 'RARE' ? 'selected' : ''}>RARE</option>
+                <option value="EPIC" ${target.minRarity === 'EPIC' ? 'selected' : ''}>EPIC</option>
+                <option value="LEGENDARY" ${target.minRarity === 'LEGENDARY' ? 'selected' : ''}>LEGENDARY</option>
+                <option value="MYTHIC" ${target.minRarity === 'MYTHIC' ? 'selected' : ''}>MYTHIC</option>
+            </select>
+
+            <select class="inline-select" style="width: 70px;"
+                onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
+                <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
+                <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>ADD</option>
+            </select>
         </div>
       </div>
-      <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Stop Watching">×</button>
     `;
     activeTargetsList.appendChild(tag);
   });
@@ -193,21 +235,23 @@ async function loadStats() {
   setTimeout(loadStats, 5000);
 }
 
-// Add target
-async function addTarget() {
-  const symbol = collectionSelect.value;
-  const priceMax = parseFloat(priceMaxInput.value);
-  const minRarity = raritySelect.value;
-  const rarityType = rarityTypeSelect.value;
-
-  if (!symbol || isNaN(priceMax)) {
-    alert('Please select a collection and enter a valid max price');
-    return;
+// Add target with DEFAULTS
+async function addTarget(symbol) {
+  // Check if already active
+  if (activeTargets.find(t => t.symbol === symbol)) {
+    // Maybe flash the existing card?
+    const card = document.querySelector(`.target-tag[data-symbol="${symbol}"]`);
+    if (card) {
+      card.style.borderColor = 'var(--color-success)';
+      setTimeout(() => card.style.borderColor = '', 500);
+    }
+    return; // Do nothing if already added
   }
 
-  const originalHTML = addTargetBtn.innerHTML;
-  addTargetBtn.disabled = true;
-  addTargetBtn.innerHTML = 'Adding...';
+  // Defaults
+  const priceMax = 1000;
+  const minRarity = 'COMMON';
+  const rarityType = 'statistical';
 
   try {
     const response = await fetch('/api/target', {
@@ -220,15 +264,43 @@ async function addTarget() {
       const data = await response.json();
       activeTargets = data.targets;
       renderActiveTargets();
-    } else {
-      alert('Failed to add target');
+      // Hide dropdown after adding
+      addCollectionToggle.parentElement.classList.remove('open');
+      collectionListContainer.classList.add('hidden');
     }
   } catch (error) {
     console.error('Error adding target:', error);
-    alert('Error adding target');
-  } finally {
-    addTargetBtn.disabled = false;
-    addTargetBtn.innerHTML = originalHTML;
+  }
+}
+
+// Update Target (Inline Edit)
+window.updateTarget = async function (symbol, field, value) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  if (!target) return;
+
+  // Update local immediately for responsiveness
+  if (field === 'priceMax') target.priceMax = parseFloat(value);
+  if (field === 'minRarity') target.minRarity = value;
+  if (field === 'rarityType') target.rarityType = value;
+
+  try {
+    // Send full updated object
+    const response = await fetch('/api/target', {
+      method: 'POST', // Use POST as upsert
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: target.symbol,
+        priceMax: target.priceMax,
+        minRarity: target.minRarity,
+        rarityType: target.rarityType
+      })
+    });
+
+    if (!response.ok) {
+      console.error('Failed to update target');
+    }
+  } catch (e) {
+    console.error('Error updating target:', e);
   }
 }
 
