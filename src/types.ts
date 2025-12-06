@@ -2,6 +2,7 @@ export interface TargetCollection {
   symbol: string;
   priceMax: number;
   minRarity?: string; // 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'
+  rarityType?: 'additive' | 'statistical';
 }
 
 export interface CollectionMetadata {
@@ -25,8 +26,19 @@ export interface Listing {
   name?: string;
   seller?: string;
   signature?: string;
+
+  // Legacy support / Primary display
   rank?: number;
   rarity?: string;
+
+  // New Dual Rarity
+  rank_additive?: number;
+  tier_additive?: string;
+  score_additive?: number;
+
+  rank_statistical?: number;
+  tier_statistical?: string;
+  score_statistical?: number;
 }
 
 

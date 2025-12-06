@@ -4,10 +4,22 @@ import { CollectionMetadata } from '../types';
 
 interface ItemMetadata {
     name: string;
-    rank: number;
-    tier: string;
     image: string;
     collection: string;
+
+    // Additive
+    rank_additive: number;
+    tier_additive: string;
+    score_additive: number;
+
+    // Statistical
+    rank_statistical: number;
+    tier_statistical: string;
+    score_statistical: number;
+
+    // Legacy fallback (optional)
+    rank?: number;
+    tier?: string;
 }
 
 export class CollectionService {

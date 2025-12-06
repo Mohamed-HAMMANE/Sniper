@@ -12,6 +12,7 @@ const clearFeedBtn = document.getElementById('clear-feed-btn');
 const collectionSelect = document.getElementById('collection-select');
 const priceMaxInput = document.getElementById('price-max');
 const raritySelect = document.getElementById('rarity-select');
+const rarityTypeSelect = document.getElementById('rarity-type-select');
 const activeTargetsList = document.getElementById('active-targets-list');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebar = document.querySelector('.sidebar');
@@ -75,6 +76,16 @@ function connectSSE() {
       handleNewListing(message.data);
     } else if (message.type === 'listing-update') {
       handleListingUpdate(message.data);
+    } else if (message.type === 'floorPriceUpdate') {
+      const { symbol, floorPrice } = message.data;
+      // Update local state
+      const colMeta = availableCollections.find(c => c.symbol === symbol);
+      if (colMeta) {
+        colMeta.floorPrice = floorPrice;
+      }
+      // Re-render targets to show new price
+      // Optimization: Could target specific element ID, but re-render is cheap for < 10 items
+      renderActiveTargets();
     }
   };
 
@@ -129,6 +140,9 @@ function renderActiveTargets() {
     const floorPrice = colMeta && colMeta.floorPrice !== undefined ? colMeta.floorPrice : null;
     const rarityBadge = target.minRarity ?
       `<span class="rarity-badge ${target.minRarity.toLowerCase()}">${target.minRarity}</span>` : '';
+    const rarityTypeLabel = target.rarityType === 'statistical' ?
+      `<span class="rarity-type-badge stat">STAT</span>` :
+      `<span class="rarity-type-badge add">ADD</span>`;
 
     const tag = document.createElement('div');
     tag.className = 'target-tag';
@@ -151,6 +165,7 @@ function renderActiveTargets() {
         <div class="target-header">
             <span class="target-name">${name}</span>
             ${rarityBadge}
+            ${rarityTypeLabel}
         </div>
         <div class="target-details">
             <span class="target-price">< ${target.priceMax} SOL</span>
@@ -181,6 +196,7 @@ async function addTarget() {
   const symbol = collectionSelect.value;
   const priceMax = parseFloat(priceMaxInput.value);
   const minRarity = raritySelect.value;
+  const rarityType = rarityTypeSelect.value;
 
   if (!symbol || isNaN(priceMax)) {
     alert('Please select a collection and enter a valid max price');
@@ -195,7 +211,7 @@ async function addTarget() {
     const response = await fetch('/api/target', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, priceMax, minRarity })
+      body: JSON.stringify({ symbol, priceMax, minRarity, rarityType })
     });
 
     if (response.ok) {
@@ -304,14 +320,44 @@ function createListingCard(listing) {
 
   const relativeTime = getRelativeTime(listing.timestamp);
 
-  // Rarity Badges
+  // Rarity Logic
   let rarityHTML = '';
-  if (listing.rarity) {
-    rarityHTML += `<span class="rarity-badge ${listing.rarity.toLowerCase()}">${listing.rarity}</span>`;
+  const primaryRank = listing.rank;
+  const primaryTier = listing.rarity;
+
+  // 1. Primary Badge: [TIER] [#RANK]
+  if (primaryTier) {
+    rarityHTML += `
+      <div class="rarity-pill">
+        <span class="rarity-name ${primaryTier.toLowerCase()}">${primaryTier}</span>
+        <span class="rarity-rank">#${primaryRank}</span>
+      </div>`;
   }
-  if (listing.rank) {
-    rarityHTML += `<span class="rarity-badge common">#${listing.rank}</span>`;
+
+  // 2. Secondary Compact: "A: #123 U" or "S: #123 U"
+  // Determine if primary is Statistical or Additive
+  let isPrimaryStat = false;
+
+  if (listing.rank_statistical && listing.rank === listing.rank_statistical) {
+    isPrimaryStat = true;
   }
+
+  let secondaryHTML = '';
+  if (isPrimaryStat) {
+    // Secondary is Additive
+    if (listing.rank_additive) {
+      const tierLetter = listing.tier_additive ? listing.tier_additive.charAt(0).toUpperCase() : '?';
+      secondaryHTML = `<span class="rarity-compact" title="Additive Rarity"><span class="rarity-letter ${listing.tier_additive ? listing.tier_additive.toLowerCase() : ''}">#${listing.rank_additive} ${tierLetter}</span></span>`;
+    }
+  } else {
+    // Secondary is Statistical
+    if (listing.rank_statistical) {
+      const tierLetter = listing.tier_statistical ? listing.tier_statistical.charAt(0).toUpperCase() : '?';
+      secondaryHTML = `<span class="rarity-compact" title="Statistical Rarity"><span class="rarity-letter ${listing.tier_statistical ? listing.tier_statistical.toLowerCase() : ''}">#${listing.rank_statistical} ${tierLetter}</span></span>`;
+    }
+  }
+
+  rarityHTML += secondaryHTML;
 
   card.innerHTML = `
     <div class="listing-image-wrapper">
@@ -324,7 +370,7 @@ function createListingCard(listing) {
       <div class="listing-meta">
         ${rarityHTML}
         <span>•</span>
-        <span>${relativeTime}</span>
+        <span class="listing-time">${relativeTime}</span>
       </div>
     </div>
     <div class="listing-action-col">
@@ -350,17 +396,26 @@ setInterval(() => {
   document.querySelectorAll('.listing-card').forEach(card => {
     const timestamp = parseInt(card.dataset.timestamp);
     if (timestamp) {
-      const timeSpan = card.querySelector('.listing-meta span:last-child');
+      const timeSpan = card.querySelector('.listing-time');
       if (timeSpan) timeSpan.textContent = getRelativeTime(timestamp);
     }
   });
 }, 10000);
 
-function clearFeed() {
-  listingsFeed.innerHTML = `
-    <div class="empty-state">
-        <span class="empty-icon">📡</span>
-        <p>Waiting for new listings...</p>
-    </div>
-  `;
+async function clearFeed() {
+  try {
+    const response = await fetch('/api/feed/clear', { method: 'POST' });
+    if (response.ok) {
+      listingsFeed.innerHTML = `
+        <div class="empty-state">
+            <span class="empty-icon">📡</span>
+            <p>Waiting for new listings...</p>
+        </div>
+      `;
+    } else {
+      console.error('Failed to clear feed history on server');
+    }
+  } catch (error) {
+    console.error('Error clearing feed:', error);
+  }
 }

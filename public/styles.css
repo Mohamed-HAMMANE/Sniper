@@ -589,16 +589,26 @@ input:focus {
 
 .listing-link {
   font-size: 11px;
-  color: var(--color-primary);
+  color: white;
+  background: var(--color-primary);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
 }
 
 .listing-link:hover {
-  text-decoration: underline;
+  background: var(--color-primary-dark);
+  text-decoration: none;
+  transform: translateY(-1px);
 }
 
-/* Rarity Badges */
+/* Sidebar/Standalone Rarity Badge */
 .rarity-badge {
   padding: 2px 6px;
   border-radius: 4px;
@@ -606,6 +616,9 @@ input:focus {
   font-weight: 700;
   text-transform: uppercase;
   color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rarity-badge.common {
@@ -613,15 +626,15 @@ input:focus {
 }
 
 .rarity-badge.uncommon {
-  background: #10b981;
+  background: #34d399;
 }
 
 .rarity-badge.rare {
-  background: #3b82f6;
+  background: #0ea5e9;
 }
 
 .rarity-badge.epic {
-  background: #8b5cf6;
+  background: #a855f7;
 }
 
 .rarity-badge.legendary {
@@ -629,6 +642,62 @@ input:focus {
 }
 
 .rarity-badge.mythic {
+  background: #ef4444;
+}
+
+/* Rarity Pill (Split Design) */
+.rarity-pill {
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: normal;
+}
+
+.rarity-name {
+  padding: 2px 6px;
+  color: white;
+  display: flex;
+  align-items: center;
+}
+
+.rarity-rank {
+  background: #1e293b;
+  /* Dark Slate */
+  color: white;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+}
+
+/* Tier Colors applied to rarity-name */
+.rarity-name.common {
+  background: #64748b;
+}
+
+.rarity-name.uncommon {
+  background: #34d399;
+  /* Emerald */
+  color: #064e3b;
+}
+
+.rarity-name.rare {
+  background: #0ea5e9;
+  /* Sky Blue */
+}
+
+.rarity-name.epic {
+  background: #a855f7;
+  /* Purple */
+}
+
+.rarity-name.legendary {
+  background: #f59e0b;
+}
+
+.rarity-name.mythic {
   background: #ef4444;
 }
 
@@ -683,7 +752,128 @@ input:focus {
   gap: 10px;
 }
 
-.empty-icon {
-  font-size: 32px;
-  opacity: 0.5;
+
+/* Extra Styles for Dual Rarity */
+.rarity-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.rarity-row.small {
+  margin-top: 1px;
+}
+
+.rarity-label {
+  color: var(--text-muted);
+  width: 25px;
+}
+
+.rarity-value {
+  color: white;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.rarity-tier-mini {
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: white;
+  background: #334155;
+}
+
+.rarity-tier-mini.common {
+  background: #64748b;
+}
+
+.rarity-tier-mini.uncommon {
+  background: #10b981;
+}
+
+.rarity-tier-mini.rare {
+  background: #3b82f6;
+}
+
+.rarity-tier-mini.epic {
+  background: #8b5cf6;
+}
+
+.rarity-tier-mini.legendary {
+  background: #f59e0b;
+}
+
+.rarity-tier-mini.mythic {
+  background: #ef4444;
+}
+
+/* Rarity Type Indicator in Sidebar */
+.rarity-type-badge {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #334155;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.rarity-type-badge.stat {
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.rarity-type-badge.add {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Compact Rarity Styles */
+.rarity-compact {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rarity-letter {
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #334155;
+  color: white;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Reuse existing tier colors for the letter badge background */
+.rarity-letter.common {
+  background: #64748b;
+}
+
+.rarity-letter.uncommon {
+  background: #34d399;
+}
+
+.rarity-letter.rare {
+  background: #0ea5e9;
+}
+
+.rarity-letter.epic {
+  background: #a855f7;
+}
+
+.rarity-letter.legendary {
+  background: #f59e0b;
+}
+
+.rarity-letter.mythic {
+  background: #ef4444;
 }

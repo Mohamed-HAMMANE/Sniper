@@ -47,7 +47,8 @@ app.post('/api/target', async (req, res) => {
   const target: TargetCollection = {
     symbol: symbol,
     priceMax: Number(priceMax),
-    minRarity: minRarity
+    minRarity: minRarity,
+    rarityType: req.body.rarityType || 'statistical'
   };
 
   configManager.addTarget(target);
@@ -57,6 +58,12 @@ app.post('/api/target', async (req, res) => {
   // broadcaster.clearHistory();
 
   res.json({ success: true, targets: configManager.getTargets() });
+});
+
+// Clear feed history
+app.post('/api/feed/clear', (req, res) => {
+  broadcaster.clearHistory();
+  res.json({ success: true, message: 'Feed history cleared' });
 });
 
 // Remove target
@@ -129,12 +136,25 @@ app.post('/webhook', (req, res) => {
           }
 
           // 3. Rarity Check
-          if (target.minRarity && itemMeta.tier) {
-            const itemRarityVal = rarityOrder[itemMeta.tier.toUpperCase()] || 0;
+          const rarityType = target.rarityType || 'statistical';
+          let itemTier = '';
+          let itemRank = 0;
+
+          if (rarityType === 'additive') {
+            itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
+            itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
+          } else {
+            // Default to statistical
+            itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+            itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
+          }
+
+          if (target.minRarity && itemTier) {
+            const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
             const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
 
             if (itemRarityVal < targetRarityVal) {
-              //console.log(`[Webhook] Skipped ${itemMeta.name}: Rarity ${itemMeta.tier} < ${target.minRarity}`);
+              //console.log(`[Webhook] Skipped ${itemMeta.name}: Rarity ${itemTier} < ${target.minRarity} (${rarityType})`);
               continue;
             }
           }
@@ -148,10 +168,21 @@ app.post('/webhook', (req, res) => {
             seller: seller,
             name: itemMeta.name, // Use local name
             imageUrl: itemMeta.image, // Use local image
-            rank: itemMeta.rank,
-            rarity: itemMeta.tier
+
+            // Primary display (based on selection)
+            rank: itemRank,
+            rarity: itemTier,
+
+            // Full data
+            rank_additive: itemMeta.rank_additive,
+            tier_additive: itemMeta.tier_additive,
+            score_additive: itemMeta.score_additive,
+
+            rank_statistical: itemMeta.rank_statistical,
+            tier_statistical: itemMeta.tier_statistical,
+            score_statistical: itemMeta.score_statistical
           };
-          //console.log(`[Webhook] 🔔 SNIPE! ${listing.name} (${listing.rarity}) for ${listing.price} SOL`);
+          //console.log(`[Webhook] 🔔 SNIPE! ${listing.name} (${listing.rarity} - ${rarityType}) for ${listing.price} SOL`);
           broadcaster.broadcastListing(listing);
 
           // Break after finding a match? Or allow multiple matches? 
@@ -210,8 +241,20 @@ app.post('/webhook', (req, res) => {
               const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
               if (itemMeta) {
                 // Rarity Check
-                if (target.minRarity && itemMeta.tier) {
-                  const itemRarityVal = rarityOrder[itemMeta.tier.toUpperCase()] || 0;
+                const rarityType = target.rarityType || 'statistical';
+                let itemTier = '';
+                let itemRank = 0;
+
+                if (rarityType === 'additive') {
+                  itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
+                  itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
+                } else {
+                  itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+                  itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
+                }
+
+                if (target.minRarity && itemTier) {
+                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
                   const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
 
                   if (itemRarityVal < targetRarityVal) {
@@ -233,8 +276,19 @@ app.post('/webhook', (req, res) => {
                   seller: event.feePayer, // Assuming fee payer is the seller/initiator
                   name: itemMeta.name,
                   imageUrl: itemMeta.image,
-                  rank: itemMeta.rank,
-                  rarity: itemMeta.tier
+
+                  // Primary display
+                  rank: itemRank,
+                  rarity: itemTier,
+
+                  // Full data
+                  rank_additive: itemMeta.rank_additive,
+                  tier_additive: itemMeta.tier_additive,
+                  score_additive: itemMeta.score_additive,
+
+                  rank_statistical: itemMeta.rank_statistical,
+                  tier_statistical: itemMeta.tier_statistical,
+                  score_statistical: itemMeta.score_statistical
                 };
 
                 // console.log(`[Webhook] Found UNKNOWN listing: ${listing.name} for ${listing.price} SOL`);
@@ -254,6 +308,33 @@ app.post('/webhook', (req, res) => {
     console.error('[Webhook] Error processing payload:', error);
   }
 });
+
+// Background Floor Price Integration
+import { FloorPriceManager } from './services/floorPriceManager';
+const floorPriceManager = new FloorPriceManager();
+
+// Refresh Floor Prices every 60 seconds
+setInterval(async () => {
+  const targets = configManager.getTargets();
+  if (targets.length === 0) return;
+
+  // console.log('[FloorPrice] Refreshing floor prices...');
+
+  for (const target of targets) {
+    // Add small delay to avoid rate limits
+    await new Promise(r => setTimeout(r, 1000));
+
+    const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
+    if (newFloor !== null) {
+      // Broadcast update
+      // Format: { symbol: string, floorPrice: number }
+      broadcaster.broadcastMessage('floorPriceUpdate', {
+        symbol: target.symbol,
+        floorPrice: newFloor
+      });
+    }
+  }
+}, 60 * 1000);
 
 // Start server
 app.listen(PORT, () => {
