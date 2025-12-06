@@ -311,7 +311,17 @@ app.post('/webhook', (req, res) => {
 
 // Background Floor Price Integration
 import { FloorPriceManager } from './services/floorPriceManager';
+import { HistoryService } from './services/historyService';
+
 const floorPriceManager = new FloorPriceManager();
+const historyService = new HistoryService();
+
+// History API
+app.get('/api/history/:symbol', (req, res) => {
+  const symbol = req.params.symbol;
+  const history = historyService.getHistory(symbol);
+  res.json({ symbol, history });
+});
 
 // Refresh Floor Prices every 60 seconds
 setInterval(async () => {
@@ -326,6 +336,10 @@ setInterval(async () => {
 
     const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
     if (newFloor !== null) {
+
+      // Record History
+      await historyService.addPoint(target.symbol, newFloor);
+
       // Broadcast update
       // Format: { symbol: string, floorPrice: number }
       broadcaster.broadcastMessage('floorPriceUpdate', {
