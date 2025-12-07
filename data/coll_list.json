@@ -10,5 +10,11 @@
     "name": "ThatGoblins",
     "floorPrice": 0.0,
     "image": "https://media.cdn.magiceden.dev/launchpad//0e190a95-1a21-409e-8ac8-3eb3afbad3ec"
+  },
+  {
+    "symbol": "froganas",
+    "name": "Frogana",
+    "floorPrice": 0.0,
+    "image": "https://prod-tensor-creators-s3.s3.us-east-1.amazonaws.com/image-9ef3f879-ec4e-4994-9eff-098990d43aa0"
   }
 ]
