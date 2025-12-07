@@ -167,6 +167,7 @@ app.post('/webhook', (req, res) => {
             timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
             seller: seller,
             name: itemMeta.name, // Use local name
+            symbol: target.symbol,
             imageUrl: itemMeta.image, // Use local image
 
             // Primary display (based on selection)
@@ -275,6 +276,7 @@ app.post('/webhook', (req, res) => {
                   timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
                   seller: event.feePayer, // Assuming fee payer is the seller/initiator
                   name: itemMeta.name,
+                  symbol: collectionSymbol,
                   imageUrl: itemMeta.image,
 
                   // Primary display

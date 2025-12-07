@@ -389,7 +389,13 @@ function createListingCard(listing) {
   let floorPriceStr = '';
 
   // 1. Try to find matching active target
-  const target = activeTargets.find(t => listing.name && listing.name.toLowerCase().includes(t.symbol.toLowerCase()));
+  // Use explicit symbol from backend if available, otherwise fallback to name match
+  let target = null;
+  if (listing.symbol) {
+    target = activeTargets.find(t => t.symbol === listing.symbol);
+  } else {
+    target = activeTargets.find(t => listing.name && listing.name.toLowerCase().includes(t.symbol.toLowerCase()));
+  }
 
   if (target) {
     const colMeta = availableCollections.find(c => c.symbol === target.symbol);
@@ -402,13 +408,20 @@ function createListingCard(listing) {
     }
   } else {
     // 2. Fallback: Try to find in all available collections
-    const colMeta = availableCollections.find(c => listing.name && listing.name.toLowerCase().includes(c.name.toLowerCase()));
-    if (colMeta) floorPrice = colMeta.floorPrice;
+    // If listing.symbol provided, use it
+    if (listing.symbol) {
+      const colMeta = availableCollections.find(c => c.symbol === listing.symbol);
+      if (colMeta) floorPrice = colMeta.floorPrice;
+    } else {
+      const colMeta = availableCollections.find(c => listing.name && listing.name.toLowerCase().includes(c.name.toLowerCase()));
+      if (colMeta) floorPrice = colMeta.floorPrice;
+    }
   }
 
   if (floorPrice) {
     floorPriceStr = `<div class="listing-floor" title="Floor Price">FP: ${floorPrice.toFixed(3)}</div>`;
   }
+
 
   const relativeTime = getRelativeTime(listing.timestamp);
 

@@ -24,6 +24,7 @@ export interface Listing {
   timestamp: number;
   imageUrl?: string;
   name?: string;
+  symbol?: string;
   seller?: string;
   signature?: string;
 
