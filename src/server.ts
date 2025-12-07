@@ -6,6 +6,7 @@ import { SSEBroadcaster } from './api/sseEndpoint';
 import { CollectionService } from './services/collectionService';
 import { TargetCollection, CollectionMetadata, Listing } from './types';
 import { decodeBase58 } from './utils/base58';
+import { startWalletMonitor } from './services/walletMonitor';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -368,6 +369,9 @@ app.listen(PORT, () => {
   console.log(`API: http://localhost:${PORT}/api`);
   console.log(`Webhook: http://localhost:${PORT}/webhook`);
   console.log(`=================================\n`);
+
+  // Start Wallet Monitor
+  startWalletMonitor();
 });
 
 // Graceful shutdown
