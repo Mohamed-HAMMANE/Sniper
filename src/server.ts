@@ -117,8 +117,8 @@ app.post('/webhook', (req, res) => {
         const seller = eventData.seller;
 
         // Debug: Check if mint exists in any collection
-        const foundCollection = collectionService.findCollectionForMint(mint);
-        //console.log(`[Webhook] Received mint: ${mint}, Found in collection: ${foundCollection || 'NONE'}`);
+        // const foundCollection = collectionService.findCollectionForMint(mint);
+        // console.log(`[Webhook] Received mint: ${mint}, Found in collection: ${foundCollection || 'NONE'}`);
 
         // Check if this mint belongs to ANY active target collection
         // We need to check each target because different targets might have different criteria
@@ -183,7 +183,8 @@ app.post('/webhook', (req, res) => {
             tier_statistical: itemMeta.tier_statistical,
             score_statistical: itemMeta.score_statistical
           };
-          //console.log(`[Webhook] 🔔 SNIPE! ${listing.name} (${listing.rarity} - ${rarityType}) for ${listing.price} SOL`);
+
+          // cache.addListing(listing);
           broadcaster.broadcastListing(listing);
 
           // Break after finding a match? Or allow multiple matches? 
@@ -232,78 +233,72 @@ app.post('/webhook', (req, res) => {
         for (const accountInfo of event.accountData) {
           const potentialMint = accountInfo.account;
 
-          // Check if this account is a known mint in any of our loaded collections
-          const collectionSymbol = collectionService.findCollectionForMint(potentialMint);
+          // Optimization: Check against active targets directly instead of all loaded collections
+          for (const target of targets) {
+            const collectionSymbol = target.symbol;
+            const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
 
-          if (collectionSymbol) {
-            // Check if we are currently watching this collection
-            const target = targets.find(t => t.symbol === collectionSymbol);
-            if (target) {
-              const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
-              if (itemMeta) {
-                // Rarity Check
-                const rarityType = target.rarityType || 'statistical';
-                let itemTier = '';
-                let itemRank = 0;
+            if (itemMeta) {
+              // Rarity Check
+              const rarityType = target.rarityType || 'statistical';
+              let itemTier = '';
+              let itemRank = 0;
 
-                if (rarityType === 'additive') {
-                  itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
-                  itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
-                } else {
-                  itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
-                  itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
-                }
+              if (rarityType === 'additive') {
+                itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
+                itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
+              } else {
+                itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+                itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
+              }
 
-                if (target.minRarity && itemTier) {
-                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
-                  const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
+              if (target.minRarity && itemTier) {
+                const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+                const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
 
-                  if (itemRarityVal < targetRarityVal) {
-                    continue;
-                  }
-                }
-
-                // If we found a price, check it against max price
-                if (price <= 0 || price > target.priceMax) {
+                if (itemRarityVal < targetRarityVal) {
                   continue;
                 }
-
-                const listing: Listing = {
-                  source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
-                  mint: potentialMint,
-                  price: price,
-                  listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
-                  timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
-                  seller: event.feePayer, // Assuming fee payer is the seller/initiator
-                  name: itemMeta.name,
-                  symbol: collectionSymbol,
-                  imageUrl: itemMeta.image,
-
-                  // Primary display
-                  rank: itemRank,
-                  rarity: itemTier,
-
-                  // Full data
-                  rank_additive: itemMeta.rank_additive,
-                  tier_additive: itemMeta.tier_additive,
-                  score_additive: itemMeta.score_additive,
-
-                  rank_statistical: itemMeta.rank_statistical,
-                  tier_statistical: itemMeta.tier_statistical,
-                  score_statistical: itemMeta.score_statistical
-                };
-
-                // console.log(`[Webhook] Found UNKNOWN listing: ${listing.name} for ${listing.price} SOL`);
-                broadcaster.broadcastListing(listing);
-                break; // Found the NFT, stop checking other accounts
               }
+
+              // If we found a price, check it against max price
+              if (price <= 0 || price > target.priceMax) {
+                continue;
+              }
+
+              const listing: Listing = {
+                source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
+                mint: potentialMint,
+                price: price,
+                listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
+                timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+                seller: event.feePayer, // Assuming fee payer is the seller/initiator
+                name: itemMeta.name,
+                symbol: collectionSymbol,
+                imageUrl: itemMeta.image,
+
+                // Primary display
+                rank: itemRank,
+                rarity: itemTier,
+
+                // Full data
+                rank_additive: itemMeta.rank_additive,
+                tier_additive: itemMeta.tier_additive,
+                score_additive: itemMeta.score_additive,
+
+                rank_statistical: itemMeta.rank_statistical,
+                tier_statistical: itemMeta.tier_statistical,
+                score_statistical: itemMeta.score_statistical
+              };
+
+              // if (cache.isNewListing(listing)) {
+              //   cache.addListing(listing);
+              broadcaster.broadcastListing(listing);
+              // }
+              break; // Found the NFT in this target, stop checking other targets for this mint
             }
           }
         }
-      } else {
-        console.log('------------------------------');
-        console.log(event);
-        console.log('------------------------------');
       }
     }
   } catch (error) {
@@ -330,27 +325,36 @@ setInterval(async () => {
   const targets = configManager.getTargets();
   if (targets.length === 0) return;
 
-  // console.log('[FloorPrice] Refreshing floor prices...');
+  // Process in batches to control rate limit (e.g. 3 concurrent requests)
+  const CONCURRENCY = 3;
+  for (let i = 0; i < targets.length; i += CONCURRENCY) {
+    const batch = targets.slice(i, i + CONCURRENCY);
 
-  for (const target of targets) {
-    // Add small delay to avoid rate limits
-    await new Promise(r => setTimeout(r, 1000));
+    await Promise.all(batch.map(async (target) => {
+      try {
+        const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
 
-    const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
-    if (newFloor !== null) {
+        if (newFloor !== null) {
+          // Record History
+          await historyService.addPoint(target.symbol, newFloor);
 
-      // Record History
-      await historyService.addPoint(target.symbol, newFloor);
+          // Update memory (marked dirty)
+          collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
 
-      // Persist to collections.json
-      collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
+          // Broadcast update
+          broadcaster.broadcastMessage('floorPriceUpdate', {
+            symbol: target.symbol,
+            floorPrice: newFloor
+          });
+        }
+      } catch (err) {
+        console.error(`Error updating floor for ${target.symbol}:`, err);
+      }
+    }));
 
-      // Broadcast update
-      // Format: { symbol: string, floorPrice: number }
-      broadcaster.broadcastMessage('floorPriceUpdate', {
-        symbol: target.symbol,
-        floorPrice: newFloor
-      });
+    // Small delay between batches
+    if (i + CONCURRENCY < targets.length) {
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 }, 60 * 1000);
@@ -367,12 +371,14 @@ app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('\n[Server] Shutting down...');
+  await collectionService.stopAutoSave();
   process.exit(0);
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('\n[Server] Shutting down...');
+  await collectionService.stopAutoSave();
   process.exit(0);
 });
