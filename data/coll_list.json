@@ -2,13 +2,13 @@
   {
     "symbol": "sachiorigins",
     "name": "Sachi Origins",
-    "floorPrice": 0.5223,
+    "floorPrice": 0.0,
     "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/sachiorigins_pfp_1764326324102.gif"
   },
   {
     "symbol": "thatgoblin",
     "name": "ThatGoblins",
-    "floorPrice": 0.3979,
+    "floorPrice": 0.0,
     "image": "https://media.cdn.magiceden.dev/launchpad//0e190a95-1a21-409e-8ac8-3eb3afbad3ec"
   }
 ]
