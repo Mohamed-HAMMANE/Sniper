@@ -383,13 +383,31 @@ function createListingCard(listing) {
   card.dataset.mint = listing.mint;
   card.setAttribute('role', 'article');
 
-  // Determine price color
+  // Determine price color & Floor Price
   let priceClass = 'good';
+  let floorPrice = null;
+  let floorPriceStr = '';
+
+  // 1. Try to find matching active target
   const target = activeTargets.find(t => listing.name && listing.name.toLowerCase().includes(t.symbol.toLowerCase()));
-  if (target && listing.price) {
-    const priceRatio = listing.price / target.priceMax;
-    if (priceRatio > 0.8) priceClass = 'high';
-    else if (priceRatio > 0.5) priceClass = 'medium';
+
+  if (target) {
+    const colMeta = availableCollections.find(c => c.symbol === target.symbol);
+    if (colMeta) floorPrice = colMeta.floorPrice;
+
+    if (listing.price) {
+      const priceRatio = listing.price / target.priceMax;
+      if (priceRatio > 0.8) priceClass = 'high';
+      else if (priceRatio > 0.5) priceClass = 'medium';
+    }
+  } else {
+    // 2. Fallback: Try to find in all available collections
+    const colMeta = availableCollections.find(c => listing.name && listing.name.toLowerCase().includes(c.name.toLowerCase()));
+    if (colMeta) floorPrice = colMeta.floorPrice;
+  }
+
+  if (floorPrice) {
+    floorPriceStr = `<div class="listing-floor" title="Floor Price">FP: ${floorPrice.toFixed(3)}</div>`;
   }
 
   const relativeTime = getRelativeTime(listing.timestamp);
@@ -448,7 +466,10 @@ function createListingCard(listing) {
       </div>
     </div>
     <div class="listing-action-col">
-      <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
+      <div class="listing-prices-row">
+         ${floorPriceStr}
+         <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
+      </div>
       <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
     </div>
   `;

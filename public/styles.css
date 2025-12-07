@@ -736,6 +736,22 @@ body {
   height: 24px;
 }
 
+.listing-prices-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listing-floor {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
 .listing-link:hover {
   background: var(--color-primary-dark);
   text-decoration: none;
