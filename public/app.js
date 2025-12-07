@@ -267,9 +267,11 @@ async function addTarget(symbol) {
       // Hide dropdown after adding
       addCollectionToggle.parentElement.classList.remove('open');
       collectionListContainer.classList.add('hidden');
+      showToast(`Started watching ${symbol}`, 'success');
     }
   } catch (error) {
     console.error('Error adding target:', error);
+    showToast('Error adding target', 'error');
   }
 }
 
@@ -298,9 +300,13 @@ window.updateTarget = async function (symbol, field, value) {
 
     if (!response.ok) {
       console.error('Failed to update target');
+      showToast('Failed to save config', 'error');
+    } else {
+      showToast('Config saved', 'success');
     }
   } catch (e) {
     console.error('Error updating target:', e);
+    showToast('Error updating target', 'error');
   }
 }
 
@@ -319,12 +325,13 @@ window.removeTarget = async function (symbol) {
       const data = await response.json();
       activeTargets = data.targets;
       renderActiveTargets();
+      showToast(`Stopped watching ${symbol}`, 'success');
     } else {
-      alert('Failed to remove target');
+      showToast('Failed to remove target', 'error');
     }
   } catch (error) {
     console.error('Error removing target:', error);
-    alert('Error removing target');
+    showToast('Error removing target', 'error');
   }
 }
 
@@ -526,4 +533,33 @@ async function clearFeed() {
   } catch (error) {
     console.error('Error clearing feed:', error);
   }
+}
+
+// Toast Notifications
+function showToast(message, type = 'success') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+
+  toast.innerHTML = `
+    <div class="toast-icon"></div>
+    <div class="toast-message">${message}</div>
+  `;
+
+  container.appendChild(toast);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    toast.style.animation = 'toastFadeOut 0.3s forwards';
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
+  }, 3000);
 }
