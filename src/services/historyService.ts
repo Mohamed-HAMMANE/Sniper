@@ -25,6 +25,7 @@ export class HistoryService {
         const filePath = path.join(this.dataDir, `${symbol}.json`);
         let history: HistoryPoint[] = [];
 
+
         // Load existing
         if (fs.existsSync(filePath)) {
             try {
@@ -32,6 +33,18 @@ export class HistoryService {
                 history = JSON.parse(raw);
             } catch (e) {
                 console.error(`[History] Error reading ${symbol}:`, e);
+            }
+        }
+
+        // Optimization: Only save if price changed significantly (> 0.05 SOL)
+        // This prevents saving 60 duplicates per hour
+        if (history.length > 0) {
+            const lastPoint = history[history.length - 1];
+            const diff = Math.abs(price - lastPoint.p);
+
+            // If change is less than 0.05 SOL, ignore it
+            if (diff < 0.05) {
+                return;
             }
         }
 
