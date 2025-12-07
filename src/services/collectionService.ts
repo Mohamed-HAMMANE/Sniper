@@ -27,9 +27,27 @@ export class CollectionService {
     private itemDatabases: Map<string, Record<string, ItemMetadata>> = new Map();
     private dataDir: string;
 
+    private isDirty: boolean = false;
+    private saveTimer: NodeJS.Timeout | null = null;
+
     constructor() {
         this.dataDir = path.join(__dirname, '../../data');
         this.loadCollections();
+        this.startAutoSave();
+    }
+
+    private startAutoSave() {
+        // Save every 30 seconds if dirty
+        this.saveTimer = setInterval(() => this.saveCollections(), 30 * 1000);
+    }
+
+    public async stopAutoSave() {
+        if (this.saveTimer) {
+            clearInterval(this.saveTimer);
+            this.saveTimer = null;
+        }
+        // Final save
+        await this.saveCollections();
     }
 
     public loadCollections() {
@@ -91,10 +109,17 @@ export class CollectionService {
         return undefined;
     }
 
-    public saveCollections() {
+    public async saveCollections() {
+        if (!this.isDirty) return;
+
         try {
             const collectionsPath = path.join(this.dataDir, 'collections.json');
-            fs.writeFileSync(collectionsPath, JSON.stringify(this.collections, null, 2), 'utf-8');
+            // Write to temp file then rename for atomic write
+            const tempPath = `${collectionsPath}.tmp`;
+            await fs.promises.writeFile(tempPath, JSON.stringify(this.collections, null, 2), 'utf-8');
+            await fs.promises.rename(tempPath, collectionsPath);
+            this.isDirty = false;
+            // console.log('[CollectionService] Saved collections.json');
         } catch (error) {
             console.error('[CollectionService] Error saving collections:', error);
         }
@@ -104,7 +129,7 @@ export class CollectionService {
         const col = this.collections.find(c => c.symbol === symbol);
         if (col) {
             Object.assign(col, updates);
-            this.saveCollections();
+            this.isDirty = true;
         }
     }
 }

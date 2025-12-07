@@ -4,85 +4,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Professional NFT Sniper - Real-time NFT listing monitor with rarity tracking">
-    <title>NFT Sniper - Live NFT Monitor</title>
+    <meta name="description" content="NFT Sniper PRO - Real-time NFT listing monitor for Solana">
+    <meta name="theme-color" content="#0a0a0f">
+    <title>NFT Sniper PRO</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="favicon.png">
 </head>
 
 <body>
     <div class="app-container">
-        <!-- Sidebar / Active Targets -->
-        <aside class="sidebar">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Brand -->
             <div class="brand">
-                <button id="sidebar-toggle" class="sidebar-toggle-btn" aria-label="Toggle Sidebar">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
+                <button id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle Sidebar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="3" y1="12" x2="21" y2="12"></line>
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="18" x2="21" y2="18"></line>
                     </svg>
                 </button>
-                <div class="brand-icon">🎯</div>
-                <div class="brand-info">
-                    <h1>NFT Sniper</h1>
-                    <span class="pro-badge">PRO</span>
-                </div>
-            </div>
-
-            <div class="sidebar-section">
-                <!-- Add Collection Widget -->
-                <div class="add-collection-widget">
-                    <button id="add-collection-toggle" class="add-collection-btn">
-                        <span>+ Add Collection</span>
-                        <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="6 9 12 15 18 9"></polyline>
+                <div class="brand-logo">
+                    <div class="logo-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <circle cx="12" cy="12" r="6"></circle>
+                            <circle cx="12" cy="12" r="2"></circle>
                         </svg>
-                    </button>
-                    <div id="collection-list-container" class="collection-list-dropdown hidden">
-                        <!-- Collections will be rendered here -->
                     </div>
-                </div>
-
-                <h3>Active Watches</h3>
-                <div id="active-targets-list" class="active-targets-list" role="list">
-                    <!-- Active targets will be rendered here dynamically -->
+                    <div class="logo-text">
+                        <span class="logo-name">NFT Sniper</span>
+                        <span class="logo-badge">PRO</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="sidebar-footer">
-                <div class="status-compact">
-                    <span id="client-status" class="status disconnected">Disconnected</span>
+            <!-- Add Collection -->
+            <div class="add-collection-wrapper">
+                <button id="add-collection-toggle" class="add-collection-btn">
+                    <span>+ Add Collection</span>
+                    <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div id="collection-list-container" class="collection-dropdown hidden">
+                    <!-- Populated by JS -->
                 </div>
-                <div class="stats-compact">
-                    <div id="stats-display" class="stats-value">
-                        <span title="Cached Listings">📦 0</span>
-                    </div>
+            </div>
+
+            <!-- Active Watches -->
+            <div class="watches-section">
+                <div class="section-title">
+                    <span>ACTIVE WATCHES</span>
+                    <span id="watch-count" class="watch-badge">0</span>
+                </div>
+                <div id="active-targets-list" class="watches-list">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="sidebar-footer">
+                <div id="client-status" class="connection-status disconnected">
+                    <span class="status-dot"></span>
+                    <span class="status-label">Disconnected</span>
+                </div>
+                <div id="stats-display" class="stats">
+                    <span>📦</span>
+                    <span id="cache-count">0</span>
                 </div>
             </div>
         </aside>
 
-        <!-- Main Content Area -->
+        <!-- Main -->
         <main class="main-content">
+            <div class="feed-container">
+                <!-- Header -->
+                <header class="feed-header">
+                    <div class="feed-title">
+                        <div class="live-badge">
+                            <span class="live-dot"></span>
+                            LIVE
+                        </div>
+                        <h1>Feed</h1>
+                    </div>
+                    <div class="feed-controls">
+                        <button id="sound-toggle" class="control-btn" title="Toggle Sound">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            </svg>
+                        </button>
+                        <button id="clear-feed-btn" class="control-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path
+                                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                                </path>
+                            </svg>
+                            <span>Clear</span>
+                        </button>
+                    </div>
+                </header>
 
-
-            <!-- Live Feed Section -->
-            <section class="feed-section">
-                <div class="feed-header">
-                    <h2>Live Feed</h2>
-                    <button id="clear-feed-btn" class="btn-text">Clear</button>
-                </div>
-
+                <!-- Feed -->
                 <div id="listings-feed" class="listings-feed">
                     <div class="empty-state">
-                        <span class="empty-icon">📡</span>
-                        <p>Waiting for new listings...</p>
+                        <div class="empty-icon">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.5">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+                            </svg>
+                        </div>
+                        <h3>Waiting for Listings</h3>
+                        <p>New listings will appear here</p>
                     </div>
                 </div>
-            </section>
+            </div>
         </main>
     </div>
 
+    <div id="toast-container" class="toast-container"></div>
     <script src="app.js"></script>
 </body>
 
