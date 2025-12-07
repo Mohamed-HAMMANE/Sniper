@@ -702,6 +702,12 @@ body {
   gap: 4px;
 }
 
+.listing-prices-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .listing-price {
   font-family: var(--font-mono);
   font-weight: 700;
@@ -732,29 +738,6 @@ body {
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  height: 24px;
-}
-
-.listing-prices-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.listing-floor {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1px 4px;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-
-.listing-link:hover {
-  background: var(--color-primary-dark);
-  text-decoration: none;
   transform: translateY(-1px);
 }
 
@@ -1094,9 +1077,50 @@ body {
   }
 }
 
-@keyframes toastFadeOut {
-  to {
-    opacity: 0;
-    transform: translateX(10px);
-  }
+
+/* Refactored Floor Price UI */
+.listing-floor {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: var(--font-mono);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+  justify-content: flex-end;
+}
+
+.fp-value {
+  color: #cbd5e1;
+}
+
+.fp-separator {
+  color: #475569;
+  /* Subtle separator */
+  font-size: 8px;
+}
+
+.fp-diff {
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* Good Deal: Eye-catching Green Badge */
+.fp-diff.diff-good {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+/* Bad Deal: Subtle Red Text */
+.fp-diff.diff-bad {
+  color: #f87171;
+  /* No background to reduce noise */
+}
+
+.fp-diff.diff-neutral {
+  color: #64748b;
 }

@@ -426,7 +426,19 @@ function createListingCard(listing) {
   }
 
   if (floorPrice) {
-    floorPriceStr = `<div class="listing-floor" title="Floor Price">FP: ${floorPrice.toFixed(3)}</div>`;
+    const diff = listing.price - floorPrice;
+    // If diff is very small (floating point error), treat as 0
+    let isZero = Math.abs(diff) < 0.0005; // Rounds to 0.000
+    let diffStr = isZero ? '0.000' : diff.toFixed(3);
+    if (!isZero && diff > 0) diffStr = '+' + diff.toFixed(3);
+
+    // Determine color AFTER epsilon check
+    let diffClass = 'diff-neutral';
+    if (!isZero && diff < 0) diffClass = 'diff-good';
+    else if (!isZero && diff > 0) diffClass = 'diff-bad';
+
+    // UI: Just the diff badge
+    floorPriceStr = `<span class="fp-diff ${diffClass}">${diffStr}</span>`;
   }
 
 
@@ -487,8 +499,8 @@ function createListingCard(listing) {
     </div>
     <div class="listing-action-col">
       <div class="listing-prices-row">
-         ${floorPriceStr}
-         <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
+        ${floorPriceStr}
+        <div class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</div>
       </div>
       <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
     </div>
