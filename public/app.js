@@ -484,11 +484,47 @@ function createListingCard(listing) {
       </div>
       <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
     </div>
-  `;
+    <div class="listing-buy-row">
+      <button class="btn-buy-now" onclick="buyListing('${listing.mint}', ${listing.price}, this)">BUY NOW</button>
+    </div>
+  </div>`;
 
   setTimeout(() => card.classList.remove('new'), 600);
   return card;
 }
+
+window.buyListing = async function (mint, price, btn) {
+  if (btn.disabled) return;
+
+  if (!confirm(`Confirm BUY for ${price} SOL?`)) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '...';
+
+  try {
+    const res = await fetch('/api/buy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mint, price })
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      btn.textContent = 'SNIPED';
+      btn.classList.add('success');
+      showToast(`SNIPED! TX: ${data.signature.slice(0, 8)}...`, 'success');
+      new Audio('data:audio/wav;base64,UklGRiQA...'); // TODO: Add better sound
+    } else {
+      throw new Error(data.error || 'Failed');
+    }
+  } catch (e) {
+    btn.textContent = originalText;
+    btn.disabled = false;
+    showToast(`Buy Failed: ${e.message}`, 'error');
+  }
+};
 
 function escapeHtml(text) {
   const d = document.createElement('div');

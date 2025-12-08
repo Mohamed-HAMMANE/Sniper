@@ -851,6 +851,41 @@ body {
   box-shadow: 0 2px 8px var(--accent-glow);
 }
 
+.btn-buy-now {
+  flex: 1;
+  background: var(--success);
+  color: #000;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  width: 100%;
+}
+
+.btn-buy-now:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-buy-now:disabled {
+  background: #334155;
+  color: #94a3b8;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-buy-now.success {
+  background: #8b5cf6;
+  /* Turn purple on success */
+  color: #fff;
+}
+
 /* ==================== RARITY BADGES - COMPACT ==================== */
 .rarity-pill {
   display: inline-flex;

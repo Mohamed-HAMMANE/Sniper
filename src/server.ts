@@ -386,3 +386,105 @@ process.on('SIGTERM', async () => {
   await collectionService.stopAutoSave();
   process.exit(0);
 });
+
+// ==================== BUY FEATURE ====================
+import { Keypair, Connection, VersionedTransaction } from '@solana/web3.js';
+
+// Global connection to reuse TCP Handshake (Optimization)
+let heliusConnection: Connection | null = null;
+const RPC_URL = process.env.RPC_URL;
+
+if (RPC_URL) {
+  heliusConnection = new Connection(RPC_URL, 'confirmed');
+} else {
+  console.warn("⚠️ Warning: RPC_URL missing while initializing server. Buy feature may be slow or fail.");
+}
+
+app.post('/api/buy', async (req, res) => {
+  try {
+    const { mint, price } = req.body;
+    if (!mint || !price) {
+      return res.status(400).json({ error: 'Missing mint or price' });
+    }
+
+    // 1. Load Keys
+    const ME_API_KEY = process.env.ME_API_KEY;
+    const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
+
+    if (!ME_API_KEY || !BURNER_KEY_RAW || !heliusConnection) {
+      return res.status(500).json({ error: 'Server misconfigured (Missing Keys/RPC)' });
+    }
+
+    // 2. Parse Burner Key (JSON Array or Base58)
+    let secretKey: Uint8Array;
+    try {
+      if (BURNER_KEY_RAW.trim().startsWith('[')) {
+        const parsed = JSON.parse(BURNER_KEY_RAW);
+        secretKey = Uint8Array.from(parsed);
+      } else {
+        secretKey = decodeBase58(BURNER_KEY_RAW);
+      }
+    } catch (e) {
+      return res.status(500).json({ error: 'Invalid Burner Key format' });
+    }
+
+    const burnerWallet = Keypair.fromSecretKey(secretKey);
+    const buyerAddress = burnerWallet.publicKey.toBase58();
+
+    // 3. Call Magic Eden API to get Transaction
+    const query = new URLSearchParams({
+      buyer: buyerAddress,
+      mint: mint,
+      price: price.toString(), // SAFETY LOCK
+      sellerExpiry: '0',
+      useV2: 'true'
+    });
+
+    // Use default instruction endpoint which handles most standard listings
+    const meUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${query.toString()}`;
+
+    const meResp = await fetch(meUrl, {
+      headers: {
+        'Authorization': `Bearer ${ME_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!meResp.ok) {
+      const errText = await meResp.text();
+      console.error(`[Buy] ME API Error: ${meResp.status} ${errText}`);
+      return res.status(400).json({ error: `ME API Failed: ${errText}` });
+    }
+
+    const data: any = await meResp.json();
+
+    // Check for tx data
+    if (!data.txSigned || !data.txSigned.data) {
+      if (!data.tx || !data.tx.data) {
+        return res.status(500).json({ error: 'Invalid response from ME API (No tx data)' });
+      }
+    }
+
+    const txBufferData = data.txSigned ? data.txSigned.data : data.tx.data;
+    const txBuffer = Uint8Array.from(txBufferData);
+
+    // 4. Deserialize & Sign
+    const transaction = VersionedTransaction.deserialize(txBuffer);
+    transaction.sign([burnerWallet]);
+
+    // 5. Send via Helius RPC (High Speed)
+    // OPTIMIZATION: skipPreflight: true (Don't simulate, just send!)
+    const signature = await heliusConnection.sendTransaction(transaction, {
+      skipPreflight: true,
+      maxRetries: 0 // Don't retry, let it fail fast if block passes. Speed is priority.
+    });
+
+    console.log(`[Buy] Success! Sig: ${signature}`);
+    res.json({ success: true, signature: signature });
+
+  } catch (err: any) {
+    console.error(`[Buy] Critical Error:`, err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+});
+
