@@ -137,6 +137,142 @@ function renderCollectionWidget() {
   });
 }
 
+// ==================== CHART MODAL ====================
+let chartInstance = null;
+
+window.openChart = async function (symbol) {
+  const modal = document.getElementById('chart-modal');
+  const modalImage = document.getElementById('modal-image');
+  const modalTitle = document.getElementById('modal-title');
+  const modalStats = document.getElementById('modal-stats');
+  const ctx = document.getElementById('priceChart').getContext('2d');
+
+  // Find collection info
+  const col = availableCollections.find(c => c.symbol === symbol);
+  const name = col ? col.name : symbol;
+  const image = col?.image || '';
+
+  // Set header info
+  modalImage.src = image;
+  modalImage.style.display = image ? 'block' : 'none';
+  modalTitle.textContent = name;
+  modalStats.textContent = 'Loading history...';
+
+  // Show modal
+  modal.classList.remove('hidden');
+
+  try {
+    // Fetch Data
+    const res = await fetch(`/api/history/${symbol}`);
+    const data = await res.json();
+    const history = data.history || []; // [{t, p}, ...]
+
+    if (history.length === 0) {
+      modalStats.textContent = 'No history data available';
+      if (chartInstance) chartInstance.destroy();
+      return;
+    }
+
+    // Process Data for Chart
+    // Sort by time just in case
+    history.sort((a, b) => a.t - b.t);
+
+    const labels = history.map(h => new Date(h.t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }));
+    const prices = history.map(h => h.p);
+
+    // Calculate stats
+    const currentPrice = prices[prices.length - 1];
+    const startPrice = prices[0];
+    const change = currentPrice - startPrice;
+    const changePct = ((change / startPrice) * 100).toFixed(2);
+    const color = change >= 0 ? '#22c55e' : '#ef4444'; // Green or Red
+
+    modalStats.innerHTML = `Current: <span style="color:${color}">${currentPrice.toFixed(3)} SOL</span> • Change: <span style="color:${color}">${change > 0 ? '+' : ''}${changePct}%</span>`;
+
+    // specific gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, change >= 0 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    // Destroy old chart
+    if (chartInstance) chartInstance.destroy();
+
+    // Create Chart
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Floor Price (SOL)',
+          data: prices,
+          borderColor: color,
+          backgroundColor: gradient,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: 'rgba(20, 20, 30, 0.9)',
+            titleColor: '#94a3b8',
+            bodyColor: '#fff',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            displayColors: false,
+            callbacks: {
+              label: (context) => `${context.parsed.y.toFixed(3)} SOL`
+            }
+          }
+        },
+        scales: {
+          x: {
+            display: false,
+            grid: { display: false }
+          },
+          y: {
+            position: 'right',
+            grid: {
+              color: 'rgba(255, 255, 255, 0.05)'
+            },
+            ticks: {
+              color: '#64748b',
+              font: { family: 'JetBrains Mono', size: 10 },
+              callback: (val) => val.toFixed(2)
+            }
+          }
+        },
+        interaction: {
+          mode: 'nearest',
+          axis: 'x',
+          intersect: false
+        }
+      }
+    });
+
+  } catch (e) {
+    console.error(e);
+    modalStats.textContent = 'Error loading chart data';
+  }
+};
+
+window.closeChart = function () {
+  document.getElementById('chart-modal').classList.add('hidden');
+};
+
+// Close on background click
+document.getElementById('chart-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'chart-modal') window.closeChart();
+});
+
 // ==================== ACTIVE TARGETS ====================
 function renderActiveTargets() {
   activeTargetsList.innerHTML = '';
@@ -157,10 +293,13 @@ function renderActiveTargets() {
     tag.dataset.symbol = target.symbol;
 
     tag.innerHTML = `
-      ${image ? `<img src="${image}" class="target-image" alt="${name}">` : `<div class="target-image-placeholder">🎯</div>`}
+      ${image
+        ? `<img src="${image}" class="target-image" alt="${name}" onclick="openChart('${target.symbol}')">`
+        : `<div class="target-image-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
+      }
       <div class="target-info">
         <div class="target-header">
-          <span class="target-name">${name}</span>
+          <span class="target-name" onclick="openChart('${target.symbol}')">${name}</span>
           <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Remove">×</button>
         </div>
         <div class="target-details">
@@ -175,8 +314,8 @@ function renderActiveTargets() {
           <select class="inline-select rarity-select ${(target.minRarity || 'common').toLowerCase()}" 
             onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.className='inline-select rarity-select '+this.value.toLowerCase();">
             ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
-      `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r}</option>`
-    ).join('')}
+        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r}</option>`
+      ).join('')}
           </select>
           <select class="inline-select" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
             <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
@@ -188,6 +327,7 @@ function renderActiveTargets() {
     activeTargetsList.appendChild(tag);
   });
 }
+
 
 // ==================== TARGET ACTIONS ====================
 async function addTarget(symbol) {

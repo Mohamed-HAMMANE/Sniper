@@ -129,6 +129,27 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
+    
+    <!-- Chart Modal -->
+    <div id="chart-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <img id="modal-image" src="" alt="" class="modal-image">
+                    <div>
+                        <h2 id="modal-title">Collection</h2>
+                        <span id="modal-stats" class="modal-stats">Loading...</span>
+                    </div>
+                </div>
+                <button class="modal-close" onclick="closeChart()">×</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
 </body>
 
