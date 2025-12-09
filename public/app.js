@@ -300,44 +300,54 @@ function renderActiveTargets() {
     const name = col ? col.name : target.symbol;
     const image = col?.image || '';
     const fp = col?.floorPrice;
+    const rarityShort = (target.minRarity || 'COMMON').substring(0, 3);
+    const rarityClass = (target.minRarity || 'common').toLowerCase();
 
     const tag = document.createElement('div');
-    tag.className = 'target-tag';
+    tag.className = 'target-card';
     tag.dataset.symbol = target.symbol;
 
     tag.innerHTML = `
-      ${image
-        ? `<img src="${image}" class="target-image" alt="${name}" onclick="openChart('${target.symbol}')">`
-        : `<div class="target-image-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
+      <div class="target-card-header">
+        ${image
+        ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="openChart('${target.symbol}')">`
+        : `<div class="target-thumb-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
       }
-      <div class="target-info">
-        <div class="target-header">
+        <div class="target-title-group">
           <span class="target-name" onclick="openChart('${target.symbol}')">${name}</span>
-          <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Remove">×</button>
+          <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
         </div>
-        <div class="target-details">
-          <span class="target-floor">FP: ${fp ? fp.toFixed(3) : '-.---'} SOL</span>
-          <div class="edit-input-group">
-            <span class="edit-label">&lt;</span>
-            <input type="number" class="inline-input" value="${target.priceMax}" step="0.1" onchange="updateTarget('${target.symbol}', 'priceMax', this.value)">
-            <span class="edit-label">SOL</span>
+        <div class="target-header-actions">
+          <label class="auto-toggle ${target.autoBuy ? 'active' : ''}" title="Auto Buy">
+            <input type="checkbox" ${target.autoBuy ? 'checked' : ''} onchange="updateTarget('${target.symbol}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <button class="btn-remove" onclick="removeTarget('${target.symbol}')" title="Remove">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="target-card-controls">
+        <div class="control-group">
+          <span class="control-label">Max</span>
+          <input type="number" class="control-input" value="${target.priceMax}" step="0.1" onchange="updateTarget('${target.symbol}', 'priceMax', this.value)">
+        </div>
+        <div class="control-group">
+          <span class="control-label">Min</span>
+          <div class="rarity-indicator ${rarityClass}">
+            <select class="rarity-dropdown" onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.parentElement.className='rarity-indicator '+this.value.toLowerCase();">
+              ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
+        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r.substring(0, 3)}</option>`
+      ).join('')}
+            </select>
           </div>
         </div>
-        <div class="target-edit-row">
-          <select class="inline-select rarity-select ${(target.minRarity || 'common').toLowerCase()}" 
-            onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.className='inline-select rarity-select '+this.value.toLowerCase();">
-            ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
-        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r}</option>`
-      ).join('')}
+        <div class="control-group">
+          <span class="control-label">Type</span>
+          <select class="type-dropdown" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
+            <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>Stat</option>
+            <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>Add</option>
           </select>
-          <select class="inline-select" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
-            <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
-            <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>ADD</option>
-          </select>
-          <label class="auto-buy-toggle" title="Warning: Auto-Buy Enabled">
-            <input type="checkbox" ${target.autoBuy ? 'checked' : ''} onchange="updateTarget('${target.symbol}', 'autoBuy', this.checked)">
-            <span>Auto</span>
-          </label>
         </div>
       </div>
     `;
@@ -482,11 +492,11 @@ function createListingCard(listing) {
 
   // Update card creation to pass seller
   card.innerHTML = `
-    <div class="listing-image-wrapper">
+    <a href="${listing.listingUrl}" target="_blank" class="listing-image-wrapper" title="View on Magic Eden">
       ${listing.imageUrl
       ? `<img src="${listing.imageUrl}" class="listing-image" alt="" onerror="this.parentElement.innerHTML='<div class=\\'no-image\\'>🖼</div>'">`
       : '<div class="no-image">🖼</div>'}
-    </div>
+    </a>
     <div class="listing-info">
       <div class="listing-title">${escapeHtml(listing.name || 'Unnamed')}</div>
       <div class="listing-meta">
@@ -500,12 +510,8 @@ function createListingCard(listing) {
         ${fpStr}
         <span class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</span>
       </div>
-      <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
-    </div>
-    <div class="listing-buy-row">
-      <button class="btn-buy-now" onclick="buyListing('${listing.mint}', ${listing.price}, '${listing.seller}', '${listing.auctionHouse || ''}', ${listing.sellerExpiry || 0}, this)">BUY NOW</button>
-    </div>
-  </div>`;
+      <button class="btn-buy-now-inline" onclick="buyListing('${listing.mint}', ${listing.price}, '${listing.seller}', '${listing.auctionHouse || ''}', ${listing.sellerExpiry || 0}, this)">Buy Now</button>
+    </div>`;
 
   setTimeout(() => card.classList.remove('new'), 600);
   return card;
@@ -562,10 +568,6 @@ setInterval(() => {
 
 // Balance Refresh
 document.getElementById('refresh-balance-btn')?.addEventListener('click', async () => {
-  const btn = document.getElementById('refresh-balance-btn');
-  if (!btn) return;
-
-  btn.classList.add('spin');
   try {
     const res = await fetch('/api/balance/refresh', { method: 'POST' });
     const data = await res.json();
@@ -575,8 +577,6 @@ document.getElementById('refresh-balance-btn')?.addEventListener('click', async 
     }
   } catch (e) {
     console.error('Balance error', e);
-  } finally {
-    setTimeout(() => btn.classList.remove('spin'), 500);
   }
 });
 
