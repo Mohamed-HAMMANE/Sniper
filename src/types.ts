@@ -29,6 +29,8 @@ export interface Listing {
   symbol?: string;
   seller?: string;
   signature?: string;
+  auctionHouse?: string;
+  sellerExpiry?: number;
 
   // Legacy support / Primary display
   rank?: number;

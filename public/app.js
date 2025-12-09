@@ -480,6 +480,7 @@ function createListingCard(listing) {
     secHTML = `<span class="rarity-compact"><span class="rarity-letter ${listing.tier_statistical?.toLowerCase() || ''}">#${listing.rank_statistical} ${t}</span></span>`;
   }
 
+  // Update card creation to pass seller
   card.innerHTML = `
     <div class="listing-image-wrapper">
       ${listing.imageUrl
@@ -502,7 +503,7 @@ function createListingCard(listing) {
       <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
     </div>
     <div class="listing-buy-row">
-      <button class="btn-buy-now" onclick="buyListing('${listing.mint}', ${listing.price}, this)">BUY NOW</button>
+      <button class="btn-buy-now" onclick="buyListing('${listing.mint}', ${listing.price}, '${listing.seller}', '${listing.auctionHouse || ''}', ${listing.sellerExpiry || 0}, this)">BUY NOW</button>
     </div>
   </div>`;
 
@@ -510,7 +511,7 @@ function createListingCard(listing) {
   return card;
 }
 
-window.buyListing = async function (mint, price, btn) {
+window.buyListing = async function (mint, price, seller, auctionHouse, sellerExpiry, btn) {
   if (btn.disabled) return;
 
   if (!confirm(`Confirm BUY for ${price} SOL?`)) return;
@@ -523,7 +524,7 @@ window.buyListing = async function (mint, price, btn) {
     const res = await fetch('/api/buy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mint, price })
+      body: JSON.stringify({ mint, price, seller, auctionHouse, sellerExpiry })
     });
 
     const data = await res.json();

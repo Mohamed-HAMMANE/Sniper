@@ -139,6 +139,30 @@ app.post('/webhook', (req, res) => {
         if (priceSol <= 0) continue;
 
         const seller = eventData.seller;
+        let auctionHouse = '';
+        const expiry = eventData.expiration;
+
+        // Extract Auction House from Instructions if M2
+        if (event.instructions) {
+          const ME_M2_PROGRAM = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
+          const CANONICAL_AH = 'E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe';
+
+          const m2Ix = event.instructions.find((ix: any) => ix.programId === ME_M2_PROGRAM);
+          if (m2Ix && m2Ix.accounts) {
+            // 1. Prefer Canonical AH if present in accounts
+            if (m2Ix.accounts.includes(CANONICAL_AH)) {
+              auctionHouse = CANONICAL_AH;
+            }
+            // 2. Fallback to index 6 (observed in logs)
+            else if (m2Ix.accounts.length > 6) {
+              auctionHouse = m2Ix.accounts[6];
+            }
+            // 3. Fallback to index 1 (original logic, likely wrong but kept as last resort)
+            else if (m2Ix.accounts.length > 1) {
+              auctionHouse = m2Ix.accounts[1];
+            }
+          }
+        }
 
         // Check against active targets
         for (const target of targets) {
@@ -185,7 +209,9 @@ app.post('/webhook', (req, res) => {
             score_additive: itemMeta.score_statistical,
             rank_statistical: itemMeta.rank_statistical,
             tier_statistical: itemMeta.tier_statistical,
-            score_statistical: itemMeta.score_statistical
+            score_statistical: itemMeta.score_statistical,
+            auctionHouse: auctionHouse,
+            sellerExpiry: expiry
           };
 
           broadcaster.broadcastListing(listing);
@@ -194,7 +220,7 @@ app.post('/webhook', (req, res) => {
           if (target.autoBuy) {
             console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
             // Pass seller to executeBuyTransaction
-            executeBuyTransaction(mint, priceSol, seller)
+            executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry)
               .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
               .catch(err => {
                 if (err === 'SKIPPED_DUPLICATE') return;
@@ -289,7 +315,7 @@ app.post('/webhook', (req, res) => {
               // Auto Buy Logic for UNKNOWN events (Critical addition to match feature parity)
               if (target.autoBuy) {
                 console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
-                executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown')
+                executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0)
                   .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
                   .catch(err => {
                     if (err === 'SKIPPED_DUPLICATE') return;
@@ -345,6 +371,7 @@ setInterval(async () => {
 // Start Server
 app.listen(PORT, () => {
   console.log(`NFT Sniper running on port ${PORT}`);
+  console.log('[Server] M2 Support Enabled (fresh build)');
   startWalletMonitor();
 });
 
@@ -365,7 +392,7 @@ const RPC_URL = process.env.RPC_URL;
 if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
 else console.warn("⚠️ Warning: RPC_URL missing.");
 
-async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string): Promise<string> {
+async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number): Promise<string> {
   // 0. Concurrency Check
   if (ActiveMints.has(mint)) {
     console.log(`[Buy] Skipping duplicate trigger for ${mint}`);
@@ -382,16 +409,17 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
     const ME_API_KEY = process.env.ME_API_KEY;
     const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
+    const BURNER_ADDRESS = process.env.BURNER_WALLET_ADDRESS;
     const USE_JITO = process.env.USE_JITO === 'true';
 
-    if (!ME_API_KEY || !BURNER_KEY_RAW || !heliusConnection) throw new Error('Server misconfigured');
+    if (!ME_API_KEY || !BURNER_KEY_RAW || !BURNER_ADDRESS || !heliusConnection) throw new Error('Server misconfigured');
 
     let secretKey: Uint8Array;
     if (BURNER_KEY_RAW.trim().startsWith('[')) secretKey = Uint8Array.from(JSON.parse(BURNER_KEY_RAW));
     else secretKey = decodeBase58(BURNER_KEY_RAW);
 
     const burnerWallet = Keypair.fromSecretKey(secretKey);
-    const buyerAddress = burnerWallet.publicKey.toBase58();
+    const buyerAddress = BURNER_ADDRESS;
 
     // 1. Prepare ATA if missing
     let sellerATA = tokenATA;
@@ -429,21 +457,76 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       mint: mint,
       tokenATA: sellerATA,
       price: price.toString(),
-      sellerExpiry: '0',
-      useV2: 'true',
+      sellerExpiry: (sellerExpiry || 0).toString(),
       prioFeeMicroLamports: PRIORITY_FEE
     });
+
+    if (auctionHouse) {
+      query.append('auctionHouseAddress', auctionHouse);
+    }
 
     const meUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${query.toString()}`;
 
     console.log(`[Buy] Fetching tx from: ${meUrl}`);
-    const meResp = await fetch(meUrl, {
+    let meResp = await fetch(meUrl, {
       headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
     });
 
     if (!meResp.ok) {
       const errText = await meResp.text();
-      throw new Error(`ME API Failed: ${errText}`);
+      console.warn(`[Buy] Initial attempt failed: ${errText}. Attempting Smart Fetch...`);
+
+      // Smart Fetch Logic: Get authoritative details
+      const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
+      const detailsResp = await fetch(detailsUrl, {
+        headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
+      });
+
+      if (detailsResp.ok) {
+        const listings = await detailsResp.json() as any[];
+        // sort by price asc just in case
+        listings.sort((a, b) => a.price - b.price);
+        const best = listings[0];
+
+        if (best) {
+          const detectedSeller = best.seller || seller;
+          const detectedExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
+
+          console.log(`[Buy] Smart Fetch found listing. AH: ${best.auctionHouse}, Expiry: ${best.expiry} (using ${detectedExpiry}), Seller: ${detectedSeller}`);
+
+          // Rebuild Query with Authoritative Data
+          const newQuery = new URLSearchParams({
+            buyer: buyerAddress,
+            seller: detectedSeller, // Use authoritative seller
+            mint: mint,
+            tokenATA: sellerATA, // Reuse calculated ATA or ideally re-calculate? Reuse is fine usually.
+            price: best.price.toString(),
+            sellerExpiry: detectedExpiry.toString(),
+            prioFeeMicroLamports: PRIORITY_FEE
+          });
+
+          if (best.auctionHouse) {
+            newQuery.set('auctionHouseAddress', best.auctionHouse);
+          }
+
+          const newUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${newQuery.toString()}`;
+          console.log(`[Buy] Retrying with Smart Fetch params: ${newUrl}`);
+
+          meResp = await fetch(newUrl, {
+            headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
+          });
+
+          if (!meResp.ok) {
+            const retryErr = await meResp.text();
+            throw new Error(`ME API Failed (Retry): ${retryErr}`);
+          }
+
+        } else {
+          throw new Error(`ME API Failed: ${errText} (and Smart Fetch found no listings)`);
+        }
+      } else {
+        throw new Error(`ME API Failed: ${errText} (Smart Fetch unreachable)`);
+      }
     }
 
     const data: any = await meResp.json();
@@ -491,11 +574,11 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
 app.post('/api/buy', async (req, res) => {
   try {
-    const { mint, price, seller } = req.body;
+    const { mint, price, seller, auctionHouse, sellerExpiry } = req.body;
     if (!mint || !price || !seller) return res.status(400).json({ error: 'Missing mint, price, or seller' });
 
     // Manual buy also benefits from Jito if configured
-    const signature = await executeBuyTransaction(mint, price, seller);
+    const signature = await executeBuyTransaction(mint, price, seller, undefined, auctionHouse, sellerExpiry);
     res.json({ success: true, signature });
   } catch (err: any) {
     if (err === 'SKIPPED_DUPLICATE') {
