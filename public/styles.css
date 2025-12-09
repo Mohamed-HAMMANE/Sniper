@@ -2,6 +2,43 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ==================== DESIGN TOKENS ==================== */
+/* Spin Animation */
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.5s linear;
+}
+
+.balance-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: #00ff9d;
+  background: rgba(0, 255, 157, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 8px;
+  cursor: default;
+}
+
+.icon-btn-small {
+  background: none;
+  border: none;
+  color: #889;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.icon-btn-small:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 :root {
   /* Background */
   --bg-base: #0a0a0f;
@@ -488,6 +525,40 @@ body {
 .inline-select:hover {
   border-color: var(--accent);
 }
+
+.auto-buy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  padding: 0 8px;
+  height: 24px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  transition: all var(--transition-fast);
+  margin-left: 6px;
+}
+
+.auto-buy-toggle input {
+  display: none;
+}
+
+.auto-buy-toggle:has(input:checked) {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.2);
+}
+
+.auto-buy-toggle:hover {
+  border-color: var(--text-secondary);
+}
+
 
 /* Rarity colors */
 .rarity-select.common {

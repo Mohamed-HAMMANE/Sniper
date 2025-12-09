@@ -126,5 +126,8 @@ Wallet and Telegram settings are managed in `.env`.
 **"Unknown Event" logs?**
 - The bot includes a custom decoder for Magic Eden V2 listings. If you see `Found UNKNOWN listing: ...`, the custom parser successfully extracted the price from a raw transaction!
 
+## 🔮 Next Strategic Move (Suggestion)
+The biggest remaining bottleneck is the Magic Eden API call (adds 200-800ms latency). We could implement **Local Transaction Building** (building the raw bytes yourself using Buffer). This would save that ~0.5s latency and make your sniper significantly faster than competitors using the public API.
+
 ## License
 MIT

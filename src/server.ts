@@ -7,6 +7,17 @@ import { CollectionService } from './services/collectionService';
 import { TargetCollection, CollectionMetadata, Listing } from './types';
 import { decodeBase58 } from './utils/base58';
 import { startWalletMonitor } from './services/walletMonitor';
+import { FloorPriceManager } from './services/floorPriceManager';
+import { HistoryService } from './services/historyService';
+import { Keypair, Connection, VersionedTransaction, PublicKey, Transaction } from '@solana/web3.js';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
+import { JitoService } from './services/jitoService';
+import { BlockhashManager } from './services/blockhashManager';
+import { ConfirmationService } from './services/confirmationService';
+import { BalanceMonitor } from './services/balanceMonitor';
+
+// Concurrency Control
+const ActiveMints = new Set<string>();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,11 +29,12 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Initialize services
 const configManager = new ConfigManager();
 const cache = new ListingCache(60); // Cache for 60 minutes
-const broadcaster = new SSEBroadcaster();
 const collectionService = new CollectionService();
-
-// State
-// let currentMetadata: CollectionMetadata | null = null; // No longer needed as global state
+const broadcaster = new SSEBroadcaster();
+const jitoService = new JitoService(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com');
+const blockhashManager = new BlockhashManager(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com');
+const confirmationService = new ConfirmationService(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', broadcaster);
+const balanceMonitor = new BalanceMonitor(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', broadcaster);
 
 // SSE endpoint
 app.get('/api/listings-stream', (req, res) => {
@@ -33,8 +45,24 @@ app.get('/api/listings-stream', (req, res) => {
 app.get('/api/config', (req, res) => {
   res.json({
     targets: configManager.getTargets(),
-    collections: collectionService.getCollections()
+    collections: collectionService.getCollections(),
+    balance: balanceMonitor.getBalance()
   });
+});
+
+// Get stats
+app.get('/api/stats', (req, res) => {
+  res.json({
+    cacheSize: cache.getCacheSize(),
+    connectedClients: broadcaster.getClientCount(),
+    activeTargets: configManager.getTargets().length,
+    balance: balanceMonitor.getBalance()
+  });
+});
+
+app.post('/api/balance/refresh', async (req, res) => {
+  await balanceMonitor.refreshBalance();
+  res.json({ success: true, balance: balanceMonitor.getBalance() });
 });
 
 // Add target collection
@@ -49,15 +77,11 @@ app.post('/api/target', async (req, res) => {
     symbol: symbol,
     priceMax: Number(priceMax),
     minRarity: minRarity,
-    rarityType: req.body.rarityType || 'statistical'
+    rarityType: req.body.rarityType || 'statistical',
+    autoBuy: req.body.autoBuy === true
   };
 
-  configManager.addTarget(target);
-
-  // Clear cache/history if needed, or keep it to support multiple streams
-  // cache.clear(); 
-  // broadcaster.clearHistory();
-
+  await configManager.addTarget(target);
   res.json({ success: true, targets: configManager.getTargets() });
 });
 
@@ -68,10 +92,9 @@ app.post('/api/feed/clear', (req, res) => {
 });
 
 // Remove target
-// Remove target
-app.delete('/api/target/:symbol', (req, res) => {
+app.delete('/api/target/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  configManager.removeTarget(symbol);
+  await configManager.removeTarget(symbol);
   res.json({ success: true, targets: configManager.getTargets() });
 });
 
@@ -117,26 +140,16 @@ app.post('/webhook', (req, res) => {
 
         const seller = eventData.seller;
 
-        // Debug: Check if mint exists in any collection
-        // const foundCollection = collectionService.findCollectionForMint(mint);
-        // console.log(`[Webhook] Received mint: ${mint}, Found in collection: ${foundCollection || 'NONE'}`);
-
-        // Check if this mint belongs to ANY active target collection
-        // We need to check each target because different targets might have different criteria
+        // Check against active targets
         for (const target of targets) {
-          // 1. Check if item is in this collection's database
           const itemMeta = collectionService.getItem(target.symbol, mint);
 
-          // If not in this collection, skip
           if (!itemMeta) continue;
 
-          // 2. Price Check
-          if (priceSol > target.priceMax) {
-            //console.log(`[Webhook] Skipped ${itemMeta.name}: Price ${priceSol} > ${target.priceMax}`);
-            continue;
-          }
+          // Price Check
+          if (priceSol > target.priceMax) continue;
 
-          // 3. Rarity Check
+          // Rarity Check
           const rarityType = target.rarityType || 'statistical';
           let itemTier = '';
           let itemRank = 0;
@@ -145,7 +158,6 @@ app.post('/webhook', (req, res) => {
             itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
             itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
           } else {
-            // Default to statistical
             itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
             itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
           }
@@ -153,150 +165,81 @@ app.post('/webhook', (req, res) => {
           if (target.minRarity && itemTier) {
             const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
             const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
-
-            if (itemRarityVal < targetRarityVal) {
-              //console.log(`[Webhook] Skipped ${itemMeta.name}: Rarity ${itemTier} < ${target.minRarity} (${rarityType})`);
-              continue;
-            }
+            if (itemRarityVal < targetRarityVal) continue;
           }
 
           const listing: Listing = {
             source: event.source || 'Unknown',
             mint: mint,
             price: priceSol,
-            listingUrl: `https://magiceden.io/item-details/${mint}`, // TODO: Adjust based on source
+            listingUrl: `https://magiceden.io/item-details/${mint}`,
             timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
             seller: seller,
-            name: itemMeta.name, // Use local name
+            name: itemMeta.name,
             symbol: target.symbol,
-            imageUrl: itemMeta.image, // Use local image
-
-            // Primary display (based on selection)
+            imageUrl: itemMeta.image,
             rank: itemRank,
             rarity: itemTier,
-
-            // Full data
             rank_additive: itemMeta.rank_additive,
             tier_additive: itemMeta.tier_additive,
-            score_additive: itemMeta.score_additive,
-
+            score_additive: itemMeta.score_statistical,
             rank_statistical: itemMeta.rank_statistical,
             tier_statistical: itemMeta.tier_statistical,
             score_statistical: itemMeta.score_statistical
           };
 
-          // cache.addListing(listing);
           broadcaster.broadcastListing(listing);
 
-          // Break after finding a match? Or allow multiple matches? 
-          // Usually one item belongs to one collection, so break is safe.
-          break;
+          // Auto Buy
+          if (target.autoBuy) {
+            console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
+            // Pass seller to executeBuyTransaction
+            executeBuyTransaction(mint, priceSol, seller)
+              .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+              .catch(err => {
+                if (err === 'SKIPPED_DUPLICATE') return;
+                console.error(`[AutoBuy] FAILED: ${err.message}`)
+              });
+          }
+          break; // Found in target, break inner loop
         }
       } else if (event.type === 'UNKNOWN' && event.accountData) {
-        // Handle UNKNOWN events (often unparsed listings)
-        let price = 0;
-        let isMagicEdenListing = false;
-
-        // Try to parse Magic Eden V2 instruction
-        if (event.instructions) {
-          const ME_V2_PROGRAM_ID = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
-          const SELL_DISCRIMINATOR = '1ff3f73b8653a5da'; // First 8 bytes of sighash
-
-          for (const ix of event.instructions) {
-            if (ix.programId === ME_V2_PROGRAM_ID && ix.data) {
-              try {
-                const decodedData = decodeBase58(ix.data);
-                const hexData = Buffer.from(decodedData).toString('hex');
-
-                if (hexData.startsWith(SELL_DISCRIMINATOR)) {
-                  // Next 8 bytes are price (little endian uint64)
-                  // Discriminator is 8 bytes (16 hex chars)
-                  // Price starts at index 16
-                  const priceHex = hexData.substring(16, 32);
-                  if (priceHex.length === 16) {
-                    // Convert little endian hex to number
-                    // e.g. 20beec1b00000000 -> 1becbe20 -> 468483616
-                    const buffer = Buffer.from(priceHex, 'hex');
-                    const priceLamports = Number(buffer.readBigUInt64LE(0));
-                    price = priceLamports / 1_000_000_000;
-                    isMagicEdenListing = true;
-                    // console.log(`[Webhook] Decoded ME V2 Price: ${price} SOL`);
-                    break;
-                  }
-                }
-              } catch (e) {
-                console.error('Error decoding instruction data:', e);
-              }
-            }
-          }
-        }
-
+        // Unknown event handling
         for (const accountInfo of event.accountData) {
           const potentialMint = accountInfo.account;
 
-          // Optimization: Check against active targets directly instead of all loaded collections
           for (const target of targets) {
             const collectionSymbol = target.symbol;
             const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
 
             if (itemMeta) {
-              // Rarity Check
+              // Rarity Check (Duplicate logic, simplified)
               const rarityType = target.rarityType || 'statistical';
-              let itemTier = '';
-              let itemRank = 0;
+              let itemTier = rarityType === 'additive' ? (itemMeta.tier_additive || 'COMMON') : (itemMeta.tier_statistical || 'COMMON');
 
-              if (rarityType === 'additive') {
-                itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
-                itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
-              } else {
-                itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
-                itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
-              }
-
-              if (target.minRarity && itemTier) {
+              if (target.minRarity) {
                 const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
                 const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
-
-                if (itemRarityVal < targetRarityVal) {
-                  continue;
-                }
+                if (itemRarityVal < targetRarityVal) continue;
               }
 
-              // If we found a price, check it against max price
-              if (price <= 0 || price > target.priceMax) {
-                continue;
-              }
-
+              // Listing Logic for Unknown (Price 0 safety)
               const listing: Listing = {
-                source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
+                source: 'MagicEden',
                 mint: potentialMint,
-                price: price,
+                price: 0,
                 listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
-                timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
-                seller: event.feePayer, // Assuming fee payer is the seller/initiator
+                timestamp: Date.now(),
+                seller: 'Unknown', // We might miss seller here, consider extracting from instruction if possible
                 name: itemMeta.name,
                 symbol: collectionSymbol,
                 imageUrl: itemMeta.image,
-
-                // Primary display
-                rank: itemRank,
-                rarity: itemTier,
-
-                // Full data
-                rank_additive: itemMeta.rank_additive,
-                tier_additive: itemMeta.tier_additive,
-                score_additive: itemMeta.score_additive,
-
-                rank_statistical: itemMeta.rank_statistical,
-                tier_statistical: itemMeta.tier_statistical,
-                score_statistical: itemMeta.score_statistical
+                rank: 0, rarity: itemTier,
+                rank_additive: itemMeta.rank_additive, tier_additive: itemMeta.tier_additive, score_additive: itemMeta.score_additive,
+                rank_statistical: itemMeta.rank_statistical, tier_statistical: itemMeta.tier_statistical, score_statistical: itemMeta.score_statistical
               };
-
-              // if (cache.isNewListing(listing)) {
-              //   cache.addListing(listing);
               broadcaster.broadcastListing(listing);
-              // }
-              break; // Found the NFT in this target, stop checking other targets for this mint
+              break;
             }
           }
         }
@@ -307,184 +250,210 @@ app.post('/webhook', (req, res) => {
   }
 });
 
-// Background Floor Price Integration
-import { FloorPriceManager } from './services/floorPriceManager';
-import { HistoryService } from './services/historyService';
-
+// Background Floor Price
 const floorPriceManager = new FloorPriceManager();
 const historyService = new HistoryService();
 
-// History API
 app.get('/api/history/:symbol', (req, res) => {
   const symbol = req.params.symbol;
   const history = historyService.getHistory(symbol);
   res.json({ symbol, history });
 });
 
-// Refresh Floor Prices every 60 seconds
+// Background Interval
 setInterval(async () => {
   const targets = configManager.getTargets();
   if (targets.length === 0) return;
 
-  // Process in batches to control rate limit (e.g. 3 concurrent requests)
   const CONCURRENCY = 3;
   for (let i = 0; i < targets.length; i += CONCURRENCY) {
     const batch = targets.slice(i, i + CONCURRENCY);
-
     await Promise.all(batch.map(async (target) => {
       try {
         const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
-
         if (newFloor !== null) {
-          // Record History
           await historyService.addPoint(target.symbol, newFloor);
-
-          // Update memory (marked dirty)
           collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
-
-          // Broadcast update
-          broadcaster.broadcastMessage('floorPriceUpdate', {
-            symbol: target.symbol,
-            floorPrice: newFloor
-          });
+          broadcaster.broadcastMessage('floorPriceUpdate', { symbol: target.symbol, floorPrice: newFloor });
         }
       } catch (err) {
         console.error(`Error updating floor for ${target.symbol}:`, err);
       }
     }));
-
-    // Small delay between batches
-    if (i + CONCURRENCY < targets.length) {
-      await new Promise(r => setTimeout(r, 1000));
-    }
+    if (i + CONCURRENCY < targets.length) await new Promise(r => setTimeout(r, 1000));
   }
 }, 60 * 1000);
 
-// Start server
+// Start Server
 app.listen(PORT, () => {
-  console.log(`\n=================================`);
-  console.log(`NFT Sniper is running!`);
-  console.log(`=================================`);
-  console.log(`Dashboard: http://localhost:${PORT}`);
-  console.log(`API: http://localhost:${PORT}/api`);
-  console.log(`Webhook: http://localhost:${PORT}/webhook`);
-  console.log(`=================================\n`);
-
-  // Start Wallet Monitor
+  console.log(`NFT Sniper running on port ${PORT}`);
   startWalletMonitor();
 });
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
+// Shutdown
+const shutdown = async () => {
   console.log('\n[Server] Shutting down...');
   await collectionService.stopAutoSave();
+  blockhashManager.stop();
+  balanceMonitor.stop();
   process.exit(0);
-});
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
-process.on('SIGTERM', async () => {
-  console.log('\n[Server] Shutting down...');
-  await collectionService.stopAutoSave();
-  process.exit(0);
-});
-
-// ==================== BUY FEATURE ====================
-import { Keypair, Connection, VersionedTransaction } from '@solana/web3.js';
-
-// Global connection to reuse TCP Handshake (Optimization)
+// Buy Feature
 let heliusConnection: Connection | null = null;
 const RPC_URL = process.env.RPC_URL;
+if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
+else console.warn("⚠️ Warning: RPC_URL missing.");
 
-if (RPC_URL) {
-  heliusConnection = new Connection(RPC_URL, 'confirmed');
-} else {
-  console.warn("⚠️ Warning: RPC_URL missing while initializing server. Buy feature may be slow or fail.");
-}
+async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string): Promise<string> {
+  // 0. Concurrency Check
+  if (ActiveMints.has(mint)) {
+    console.log(`[Buy] Skipping duplicate trigger for ${mint}`);
+    return 'SKIPPED_DUPLICATE';
+  }
+  ActiveMints.add(mint);
 
-app.post('/api/buy', async (req, res) => {
   try {
-    const { mint, price } = req.body;
-    if (!mint || !price) {
-      return res.status(400).json({ error: 'Missing mint or price' });
+    // 0.1 Balance Check
+    const balance = balanceMonitor.getBalance();
+    if (balance < price) {
+      throw new Error(`Insufficient funds: ${balance.toFixed(3)} SOL < ${price} SOL`);
     }
 
-    // 1. Load Keys
     const ME_API_KEY = process.env.ME_API_KEY;
     const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
+    const USE_JITO = process.env.USE_JITO === 'true';
 
-    if (!ME_API_KEY || !BURNER_KEY_RAW || !heliusConnection) {
-      return res.status(500).json({ error: 'Server misconfigured (Missing Keys/RPC)' });
-    }
+    if (!ME_API_KEY || !BURNER_KEY_RAW || !heliusConnection) throw new Error('Server misconfigured');
 
-    // 2. Parse Burner Key (JSON Array or Base58)
     let secretKey: Uint8Array;
-    try {
-      if (BURNER_KEY_RAW.trim().startsWith('[')) {
-        const parsed = JSON.parse(BURNER_KEY_RAW);
-        secretKey = Uint8Array.from(parsed);
-      } else {
-        secretKey = decodeBase58(BURNER_KEY_RAW);
-      }
-    } catch (e) {
-      return res.status(500).json({ error: 'Invalid Burner Key format' });
-    }
+    if (BURNER_KEY_RAW.trim().startsWith('[')) secretKey = Uint8Array.from(JSON.parse(BURNER_KEY_RAW));
+    else secretKey = decodeBase58(BURNER_KEY_RAW);
 
     const burnerWallet = Keypair.fromSecretKey(secretKey);
     const buyerAddress = burnerWallet.publicKey.toBase58();
 
-    // 3. Call Magic Eden API to get Transaction
+    // 1. Prepare ATA if missing
+    let sellerATA = tokenATA;
+    if (!sellerATA) {
+      const mintPubkey = new PublicKey(mint);
+
+      // Check local collection data for MPL Core flag (0ms latency)
+      const symbol = collectionService.findCollectionForMint(mint);
+      let isCore = false;
+
+      if (symbol) {
+        const col = collectionService.getCollection(symbol);
+        if (col && col.type === 'core') {
+          isCore = true;
+        }
+      }
+
+      if (isCore) {
+        console.log('[Buy] Local DB thinks this is MPL Core. Skipping ATA derivation.');
+        sellerATA = seller;
+      } else {
+        // Standard SPL Token
+        const sellerPubkey = new PublicKey(seller);
+        sellerATA = (await getAssociatedTokenAddress(mintPubkey, sellerPubkey)).toBase58();
+      }
+    }
+
+    // 2. Build Query
+    // Adding Priority Fee: 10000 microlamports = 0.00001 SOL (Adjustable)
+    const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '100000'; // Default 0.0001 SOL to be safe
+
     const query = new URLSearchParams({
       buyer: buyerAddress,
+      seller: seller,
       mint: mint,
-      price: price.toString(), // SAFETY LOCK
+      tokenATA: sellerATA,
+      price: price.toString(),
       sellerExpiry: '0',
-      useV2: 'true'
+      useV2: 'true',
+      prioFeeMicroLamports: PRIORITY_FEE
     });
 
-    // Use default instruction endpoint which handles most standard listings
     const meUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${query.toString()}`;
 
+    console.log(`[Buy] Fetching tx from: ${meUrl}`);
     const meResp = await fetch(meUrl, {
-      headers: {
-        'Authorization': `Bearer ${ME_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
+      headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
     });
 
     if (!meResp.ok) {
       const errText = await meResp.text();
-      console.error(`[Buy] ME API Error: ${meResp.status} ${errText}`);
-      return res.status(400).json({ error: `ME API Failed: ${errText}` });
+      throw new Error(`ME API Failed: ${errText}`);
     }
 
     const data: any = await meResp.json();
+    const txBufferData = data.txSigned ? data.txSigned.data : (data.tx ? data.tx.data : null);
 
-    // Check for tx data
-    if (!data.txSigned || !data.txSigned.data) {
-      if (!data.tx || !data.tx.data) {
-        return res.status(500).json({ error: 'Invalid response from ME API (No tx data)' });
-      }
-    }
+    if (!txBufferData) throw new Error('Invalid response from ME API: No transaction data found');
 
-    const txBufferData = data.txSigned ? data.txSigned.data : data.tx.data;
+    // Deserialize
     const txBuffer = Uint8Array.from(txBufferData);
-
-    // 4. Deserialize & Sign
     const transaction = VersionedTransaction.deserialize(txBuffer);
+
+    // 3. Get Blockhash (Instant)
+    const latestBlockhashObj = blockhashManager.getLatestBlockhash();
+    if (!latestBlockhashObj) throw new Error('Blockhash not yet available');
+
+    // 4. Sign
+    transaction.message.recentBlockhash = latestBlockhashObj.blockhash;
     transaction.sign([burnerWallet]);
 
-    // 5. Send via Helius RPC (High Speed)
-    // OPTIMIZATION: skipPreflight: true (Don't simulate, just send!)
-    const signature = await heliusConnection.sendTransaction(transaction, {
-      skipPreflight: true,
-      maxRetries: 0 // Don't retry, let it fail fast if block passes. Speed is priority.
-    });
+    // 5. Execute
+    let signature = '';
+    if (USE_JITO) {
+      console.log('[Buy] Sending via Jito Bundle...');
+      const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
+      // Pass the cached blockhash to avoid extra RPC call in JitoService
+      signature = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, latestBlockhashObj.blockhash);
+    } else {
+      console.log('[Buy] Sending via Standard RPC...');
+      signature = await heliusConnection.sendTransaction(transaction, { skipPreflight: true, maxRetries: 0 });
+    }
 
-    console.log(`[Buy] Success! Sig: ${signature}`);
-    res.json({ success: true, signature: signature });
+    // 6. Monitor (Fire and Forget)
+    confirmationService.monitor(signature, 'Buy Now');
 
+    // 7. Optimistic Balance Update
+    balanceMonitor.decreaseBalance(price);
+
+    return signature;
+
+  } finally {
+    // Release Lock
+    ActiveMints.delete(mint);
+  }
+}
+
+app.post('/api/buy', async (req, res) => {
+  try {
+    const { mint, price, seller } = req.body;
+    if (!mint || !price || !seller) return res.status(400).json({ error: 'Missing mint, price, or seller' });
+
+    // Manual buy also benefits from Jito if configured
+    const signature = await executeBuyTransaction(mint, price, seller);
+    res.json({ success: true, signature });
   } catch (err: any) {
-    console.error(`[Buy] Critical Error:`, err);
-    res.status(500).json({ error: err.message || 'Internal Server Error' });
+    if (err === 'SKIPPED_DUPLICATE') {
+      res.status(409).json({ error: 'Transaction already in progress for this mint' });
+    } else {
+      console.error(`[Manual Buy] Error:`, err);
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
+// Global Error Handling
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled Rejection at:', promise, 'reason:', reason);
+});

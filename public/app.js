@@ -73,6 +73,19 @@ function connectSSE() {
     if (msg.type === 'listing') handleNewListing(msg.data);
     else if (msg.type === 'listing-update') handleListingUpdate(msg.data);
     else if (msg.type === 'floorPriceUpdate') handleFloorPriceUpdate(msg.data);
+    else if (msg.type === 'tx_confirmed') {
+      showToast(`✅ Transaction Confirmed!`, 'success');
+      if (soundEnabled) try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=').play().catch(e => { }); } catch (e) { }
+    }
+    else if (msg.type === 'tx_failed') {
+      showToast(`❌ Transaction Failed: ${JSON.stringify(msg.data.error)}`, 'error');
+    }
+    else if (msg.type === 'tx_timeout') {
+      showToast(`⚠️ Transaction Timeout (Check Solscan)`, 'error');
+    }
+    else if (msg.type === 'balanceUpdate') {
+      updateBalanceDisplay(msg.data.balance);
+    }
   };
 
   eventSource.onerror = () => {
@@ -321,6 +334,10 @@ function renderActiveTargets() {
             <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
             <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>ADD</option>
           </select>
+          <label class="auto-buy-toggle" title="Warning: Auto-Buy Enabled">
+            <input type="checkbox" ${target.autoBuy ? 'checked' : ''} onchange="updateTarget('${target.symbol}', 'autoBuy', this.checked)">
+            <span>Auto</span>
+          </label>
         </div>
       </div>
     `;
@@ -541,6 +558,35 @@ setInterval(() => {
     }
   });
 }, 10000);
+
+// Balance Refresh
+document.getElementById('refresh-balance-btn')?.addEventListener('click', async () => {
+  const btn = document.getElementById('refresh-balance-btn');
+  if (!btn) return;
+
+  btn.classList.add('spin');
+  try {
+    const res = await fetch('/api/balance/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      updateBalanceDisplay(data.balance);
+      showToast('Balance updated', 'success');
+    }
+  } catch (e) {
+    console.error('Balance error', e);
+  } finally {
+    setTimeout(() => btn.classList.remove('spin'), 500);
+  }
+});
+
+function updateBalanceDisplay(solAmount) {
+  const el = document.getElementById('balance-display');
+  if (el) {
+    el.textContent = `${Number(solAmount).toFixed(3)} SOL`;
+    if (solAmount < 0.1) el.style.color = '#ff4d4d'; // Red warning
+    else el.style.color = '#00ff9d'; // Green
+  }
+}
 
 // ==================== CLEAR FEED ====================
 async function clearFeed() {

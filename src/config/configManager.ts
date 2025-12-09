@@ -25,9 +25,9 @@ export class ConfigManager {
     return { targets: [] };
   }
 
-  public saveConfig(): void {
+  public async saveConfig(): Promise<void> {
     try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
+      await fs.promises.writeFile(CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
       console.log('Config saved successfully');
     } catch (error) {
       console.error('Error saving config:', error);
@@ -42,7 +42,7 @@ export class ConfigManager {
     return this.config.targets || [];
   }
 
-  public addTarget(target: TargetCollection): void {
+  public async addTarget(target: TargetCollection): Promise<void> {
     if (!this.config.targets) {
       this.config.targets = [];
     }
@@ -50,12 +50,12 @@ export class ConfigManager {
     // Remove existing target for same symbol if exists (update)
     this.config.targets = this.config.targets.filter(t => t.symbol !== target.symbol);
     this.config.targets.push(target);
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  public removeTarget(symbol: string): void {
+  public async removeTarget(symbol: string): Promise<void> {
     if (!this.config.targets) return;
     this.config.targets = this.config.targets.filter(t => t.symbol !== symbol);
-    this.saveConfig();
+    await this.saveConfig();
   }
 }

@@ -3,6 +3,7 @@ export interface TargetCollection {
   priceMax: number;
   minRarity?: string; // 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'
   rarityType?: 'additive' | 'statistical';
+  autoBuy?: boolean;
 }
 
 export interface CollectionMetadata {
@@ -10,6 +11,7 @@ export interface CollectionMetadata {
   name: string;
   image: string;
   floorPrice?: number;
+  type?: 'core' | 'normal';
 }
 
 export interface Config {
