@@ -10,5 +10,23 @@
     "name": "Hoopa Power Ups",
     "floorPrice": 0.0,
     "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/powerup_pfp_1685031778749.jpeg"
+  },
+  {
+    "symbol": "portals",
+    "name": "Portals",
+    "floorPrice": 0.0,
+    "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/portalsuniverse_pfp_1731112753937.png"
+  },
+  {
+    "symbol": "midevils",
+    "name": "MidEvils",
+    "floorPrice": 0.0,
+    "image": "https://media.cdn.magiceden.dev/launchpad//8809d569-9302-4000-a0ce-ab428c4c5fa8"
+  },
+  {
+    "symbol": "player2_",
+    "name": "<Player2>",
+    "floorPrice": 0.0,
+    "image": "https://7oo7vkazixdwr577bud2vt7mfsjrkrzix4axlsqofaexgxrwbuxa.arweave.net/-536qBlFx2j3_w0Hqs_sLJMVRyi_AXXKDigJc142DS4"
   }
 ]
