@@ -1,20 +1,14 @@
 [
   {
-    "symbol": "sachiorigins",
-    "name": "Sachi Origins",
-    "floorPrice": 0.0,
-    "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/sachiorigins_pfp_1764326324102.gif"
-  },
-  {
     "symbol": "thatgoblin",
     "name": "ThatGoblins",
     "floorPrice": 0.0,
     "image": "https://media.cdn.magiceden.dev/launchpad//0e190a95-1a21-409e-8ac8-3eb3afbad3ec"
   },
   {
-    "symbol": "froganas",
-    "name": "Frogana",
+    "symbol": "powerup",
+    "name": "Hoopa Power Ups",
     "floorPrice": 0.0,
-    "image": "https://prod-tensor-creators-s3.s3.us-east-1.amazonaws.com/image-9ef3f879-ec4e-4994-9eff-098990d43aa0"
+    "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/powerup_pfp_1685031778749.jpeg"
   }
 ]

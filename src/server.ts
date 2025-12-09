@@ -204,7 +204,44 @@ app.post('/webhook', (req, res) => {
           break; // Found in target, break inner loop
         }
       } else if (event.type === 'UNKNOWN' && event.accountData) {
-        // Unknown event handling
+        // Handle UNKNOWN events (often unparsed listings)
+        let price = 0;
+        let isMagicEdenListing = false;
+
+        // Try to parse Magic Eden V2 instruction
+        if (event.instructions) {
+          const ME_V2_PROGRAM_ID = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
+          const SELL_DISCRIMINATOR = '1ff3f73b8653a5da'; // First 8 bytes of sighash
+
+          for (const ix of event.instructions) {
+            if (ix.programId === ME_V2_PROGRAM_ID && ix.data) {
+              try {
+                const decodedData = decodeBase58(ix.data);
+                const hexData = Buffer.from(decodedData).toString('hex');
+
+                if (hexData.startsWith(SELL_DISCRIMINATOR)) {
+                  // Next 8 bytes are price (little endian uint64)
+                  // Discriminator is 8 bytes (16 hex chars)
+                  // Price starts at index 16
+                  const priceHex = hexData.substring(16, 32);
+                  if (priceHex.length === 16) {
+                    // Convert little endian hex to number
+                    // e.g. 20beec1b00000000 -> 1becbe20 -> 468483616
+                    const buffer = Buffer.from(priceHex, 'hex');
+                    const priceLamports = Number(buffer.readBigUInt64LE(0));
+                    price = priceLamports / 1_000_000_000;
+                    isMagicEdenListing = true;
+                    // console.log(`[Webhook] Decoded ME V2 Price: ${price} SOL`);
+                    break;
+                  }
+                }
+              } catch (e) {
+                console.error('Error decoding instruction data:', e);
+              }
+            }
+          }
+        }
+
         for (const accountInfo of event.accountData) {
           const potentialMint = accountInfo.account;
 
@@ -216,6 +253,7 @@ app.post('/webhook', (req, res) => {
               // Rarity Check (Duplicate logic, simplified)
               const rarityType = target.rarityType || 'statistical';
               let itemTier = rarityType === 'additive' ? (itemMeta.tier_additive || 'COMMON') : (itemMeta.tier_statistical || 'COMMON');
+              let itemRank = rarityType === 'additive' ? (itemMeta.rank_additive || 0) : (itemMeta.rank_statistical || 0);
 
               if (target.minRarity) {
                 const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
@@ -224,21 +262,41 @@ app.post('/webhook', (req, res) => {
               }
 
               // Listing Logic for Unknown (Price 0 safety)
+              if (price <= 0 || price > target.priceMax) continue;
+
               const listing: Listing = {
-                source: 'MagicEden',
+                source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
                 mint: potentialMint,
-                price: 0,
+                price: price,
                 listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
-                timestamp: Date.now(),
-                seller: 'Unknown', // We might miss seller here, consider extracting from instruction if possible
+                timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+                seller: event.feePayer || 'Unknown', // Keep consistent with old code assumption
                 name: itemMeta.name,
                 symbol: collectionSymbol,
                 imageUrl: itemMeta.image,
-                rank: 0, rarity: itemTier,
-                rank_additive: itemMeta.rank_additive, tier_additive: itemMeta.tier_additive, score_additive: itemMeta.score_additive,
-                rank_statistical: itemMeta.rank_statistical, tier_statistical: itemMeta.tier_statistical, score_statistical: itemMeta.score_statistical
+                rank: itemRank,
+                rarity: itemTier,
+                rank_additive: itemMeta.rank_additive,
+                tier_additive: itemMeta.tier_additive,
+                score_additive: itemMeta.score_statistical, // reusing statistical score if additive missing, or keeping consistent
+                rank_statistical: itemMeta.rank_statistical,
+                tier_statistical: itemMeta.tier_statistical,
+                score_statistical: itemMeta.score_statistical
               };
+
               broadcaster.broadcastListing(listing);
+
+              // Auto Buy Logic for UNKNOWN events (Critical addition to match feature parity)
+              if (target.autoBuy) {
+                console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
+                executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown')
+                  .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                  .catch(err => {
+                    if (err === 'SKIPPED_DUPLICATE') return;
+                    console.error(`[AutoBuy] FAILED: ${err.message}`)
+                  });
+              }
+
               break;
             }
           }

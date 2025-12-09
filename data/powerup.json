@@ -1,0 +1,24 @@
+{
+    "3VfNJgpZZBLvCL8ykgMAYnqDM3K6REg7av84rWH26CVK": {
+        "name": "Power Up #1219",
+        "image": "https://the-hoopas.s3.amazonaws.com/powerup/images/spark.png",
+        "collection": "powerup",
+        "rank_additive": 1,
+        "tier_additive": "MYTHIC",
+        "score_additive": 7782,
+        "rank_statistical": 1,
+        "tier_statistical": "MYTHIC",
+        "score_statistical": 1.8381300854948943e-23
+    },
+    "DmgcBbpFyapDLfZY2SFWZnzcoHLjPNsEUNeTvGqJxYQh": {
+        "name": "Power Up #12604",
+        "image": "https://the-hoopas.s3.amazonaws.com/powerup/images/zap.png",
+        "collection": "powerup",
+        "rank_additive": 2,
+        "tier_additive": "MYTHIC",
+        "score_additive": 7782,
+        "rank_statistical": 2,
+        "tier_statistical": "MYTHIC",
+        "score_statistical": 1.8381300854948943e-23
+    }
+}
