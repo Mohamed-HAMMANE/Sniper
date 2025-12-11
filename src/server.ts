@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import * as path from 'path';
 import { ConfigManager } from './config/configManager';
@@ -447,104 +448,146 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       }
     }
 
-    // 2. Build Query
-    // Adding Priority Fee: 10000 microlamports = 0.00001 SOL (Adjustable)
-    const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '100000'; // Default 0.0001 SOL to be safe
+    // 2. Build Query - ALWAYS fetch authoritative listing data first (Smart Fetch First)
+    const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '500000'; // Default 0.0005 SOL for better confirmation
 
+    // Smart Fetch First: Get authoritative listing details from ME
+    const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
+    console.log(`[Buy] Smart Fetch First - fetching: ${detailsUrl}`);
+
+    const detailsResp = await fetch(detailsUrl, {
+      headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
+    });
+
+    if (!detailsResp.ok) {
+      throw new Error(`Failed to fetch listing details: ${detailsResp.status} ${detailsResp.statusText}`);
+    }
+
+    const listings = await detailsResp.json() as any[];
+    if (!listings || listings.length === 0) {
+      throw new Error('No active listings found for this NFT');
+    }
+
+    // Sort by price and get best listing
+    listings.sort((a, b) => a.price - b.price);
+    const best = listings[0];
+
+    // Use authoritative data from ME API
+    const authSeller = best.seller || seller;
+    const authExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
+    const authTokenATA = best.tokenAddress || sellerATA;
+    const authPrice = best.price;
+    const authAuctionHouse = best.auctionHouse || auctionHouse;
+
+    console.log(`[Buy] Using authoritative data: Price=${authPrice}, Seller=${authSeller}, AH=${authAuctionHouse}, Expiry=${authExpiry}, TokenATA=${authTokenATA}`);
+
+    // Build query with authoritative data
     const query = new URLSearchParams({
       buyer: buyerAddress,
-      seller: seller,
-      mint: mint,
-      tokenATA: sellerATA,
-      price: price.toString(),
-      sellerExpiry: (sellerExpiry || 0).toString(),
+      seller: authSeller,
+      tokenMint: mint,
+      tokenATA: authTokenATA,
+      price: authPrice.toString(),
+      sellerExpiry: authExpiry.toString(),
       prioFeeMicroLamports: PRIORITY_FEE
     });
 
-    if (auctionHouse) {
-      query.append('auctionHouseAddress', auctionHouse);
+    if (authAuctionHouse) {
+      query.append('auctionHouseAddress', authAuctionHouse);
     }
 
     const meUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${query.toString()}`;
-
     console.log(`[Buy] Fetching tx from: ${meUrl}`);
-    let meResp = await fetch(meUrl, {
+
+    const meResp = await fetch(meUrl, {
       headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
     });
 
     if (!meResp.ok) {
       const errText = await meResp.text();
-      console.warn(`[Buy] Initial attempt failed: ${errText}. Attempting Smart Fetch...`);
-
-      // Smart Fetch Logic: Get authoritative details
-      const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
-      const detailsResp = await fetch(detailsUrl, {
-        headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
-      });
-
-      if (detailsResp.ok) {
-        const listings = await detailsResp.json() as any[];
-        // sort by price asc just in case
-        listings.sort((a, b) => a.price - b.price);
-        const best = listings[0];
-
-        if (best) {
-          const detectedSeller = best.seller || seller;
-          const detectedExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
-
-          console.log(`[Buy] Smart Fetch found listing. AH: ${best.auctionHouse}, Expiry: ${best.expiry} (using ${detectedExpiry}), Seller: ${detectedSeller}`);
-
-          // Rebuild Query with Authoritative Data
-          const newQuery = new URLSearchParams({
-            buyer: buyerAddress,
-            seller: detectedSeller, // Use authoritative seller
-            mint: mint,
-            tokenATA: sellerATA, // Reuse calculated ATA or ideally re-calculate? Reuse is fine usually.
-            price: best.price.toString(),
-            sellerExpiry: detectedExpiry.toString(),
-            prioFeeMicroLamports: PRIORITY_FEE
-          });
-
-          if (best.auctionHouse) {
-            newQuery.set('auctionHouseAddress', best.auctionHouse);
-          }
-
-          const newUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${newQuery.toString()}`;
-          console.log(`[Buy] Retrying with Smart Fetch params: ${newUrl}`);
-
-          meResp = await fetch(newUrl, {
-            headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
-          });
-
-          if (!meResp.ok) {
-            const retryErr = await meResp.text();
-            throw new Error(`ME API Failed (Retry): ${retryErr}`);
-          }
-
-        } else {
-          throw new Error(`ME API Failed: ${errText} (and Smart Fetch found no listings)`);
-        }
-      } else {
-        throw new Error(`ME API Failed: ${errText} (Smart Fetch unreachable)`);
-      }
+      throw new Error(`ME API Failed: ${errText}`);
     }
 
     const data: any = await meResp.json();
-    const txBufferData = data.txSigned ? data.txSigned.data : (data.tx ? data.tx.data : null);
 
-    if (!txBufferData) throw new Error('Invalid response from ME API: No transaction data found');
+    // Debug: Log response structure
+    console.log('[Buy] ME Response keys:', Object.keys(data));
+    if (data.v0) console.log('[Buy] v0 type:', typeof data.v0, 'isArray:', Array.isArray(data.v0));
+
+    // Handle different response formats - prioritize v0 (compact versioned format)
+    let txBuffer: Uint8Array;
+
+    if (data.v0) {
+      // v0 is the versioned transaction format (compact with address lookup tables)
+      // IMPORTANT: Prioritize txSigned (ME's pre-signed tx) over tx (unsigned)
+      // The tx needs 2 signatures: ME's signature + buyer's signature
+      if (data.v0.txSigned && data.v0.txSigned.data) {
+        // v0.txSigned.data is ALREADY signed by ME - we just add our signature
+        txBuffer = Uint8Array.from(data.v0.txSigned.data);
+        console.log('[Buy] Using v0.txSigned.data array (pre-signed by ME)');
+      } else if (typeof data.v0 === 'string') {
+        txBuffer = Buffer.from(data.v0, 'base64');
+        console.log('[Buy] Using v0 as base64 string');
+      } else if (data.v0.tx && data.v0.tx.data) {
+        // v0.tx.data is UNSIGNED - will fail if 2 sigs required
+        txBuffer = Uint8Array.from(data.v0.tx.data);
+        console.log('[Buy] WARNING: Using v0.tx.data (UNSIGNED) - may fail if 2 sigs needed');
+      } else if (data.v0.data) {
+        txBuffer = Uint8Array.from(data.v0.data);
+        console.log('[Buy] Using v0.data array');
+      } else if (Array.isArray(data.v0)) {
+        txBuffer = Uint8Array.from(data.v0);
+        console.log('[Buy] Using v0 as array');
+      } else {
+        console.log('[Buy] v0 object keys:', Object.keys(data.v0));
+        console.log('[Buy] v0 sample:', JSON.stringify(data.v0).substring(0, 200));
+        throw new Error('Unknown v0 format');
+      }
+    } else if (data.txSigned && data.txSigned.data) {
+      // Array buffer format (fallback)
+      txBuffer = Uint8Array.from(data.txSigned.data);
+      console.log('[Buy] Using txSigned.data array');
+    } else if (data.tx && typeof data.tx === 'string') {
+      // Base64 string format
+      txBuffer = Buffer.from(data.tx, 'base64');
+      console.log('[Buy] Using tx as base64 string');
+    } else if (data.tx && data.tx.data) {
+      // tx.data array format
+      txBuffer = Uint8Array.from(data.tx.data);
+      console.log('[Buy] Using tx.data array');
+    } else {
+      console.error('[Buy] Unknown response format:', JSON.stringify(data).substring(0, 500));
+      throw new Error('Invalid response from ME API: Unknown transaction format');
+    }
+
+    console.log(`[Buy] Transaction size: ${txBuffer.length} bytes`);
 
     // Deserialize
-    const txBuffer = Uint8Array.from(txBufferData);
     const transaction = VersionedTransaction.deserialize(txBuffer);
 
-    // 3. Get Blockhash (Instant)
-    const latestBlockhashObj = blockhashManager.getLatestBlockhash();
-    if (!latestBlockhashObj) throw new Error('Blockhash not yet available');
+    // Log transaction details for debugging
+    console.log(`[Buy] Transaction signatures needed: ${transaction.message.header.numRequiredSignatures}`);
+    console.log(`[Buy] Transaction has ${transaction.message.compiledInstructions.length} instructions`);
 
-    // 4. Sign
-    transaction.message.recentBlockhash = latestBlockhashObj.blockhash;
+    // 3. Get Blockhash - prefer ME's blockhashData if available (it's matched to the tx)
+    let blockhashToUse = '';
+    if (data.blockhashData && data.blockhashData.blockhash) {
+      blockhashToUse = data.blockhashData.blockhash;
+      console.log(`[Buy] Using ME's blockhash: ${blockhashToUse}`);
+    } else {
+      const latestBlockhashObj = blockhashManager.getLatestBlockhash();
+      if (!latestBlockhashObj) throw new Error('Blockhash not yet available');
+      blockhashToUse = latestBlockhashObj.blockhash;
+      console.log(`[Buy] Using cached blockhash: ${blockhashToUse}`);
+    }
+
+    // 4. Sign - update blockhash and sign
+    transaction.message.recentBlockhash = blockhashToUse;
     transaction.sign([burnerWallet]);
+
+    // Log final serialized size
+    const finalSerialized = transaction.serialize();
+    console.log(`[Buy] Final serialized size: ${finalSerialized.length} bytes`);
 
     // 5. Execute
     let signature = '';
@@ -552,10 +595,15 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       console.log('[Buy] Sending via Jito Bundle...');
       const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
       // Pass the cached blockhash to avoid extra RPC call in JitoService
-      signature = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, latestBlockhashObj.blockhash);
+      signature = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
     } else {
       console.log('[Buy] Sending via Standard RPC...');
-      signature = await heliusConnection.sendTransaction(transaction, { skipPreflight: true, maxRetries: 0 });
+      const serializedTx = transaction.serialize();
+      signature = await heliusConnection.sendRawTransaction(serializedTx, {
+        skipPreflight: true,
+        maxRetries: 0,
+        preflightCommitment: 'confirmed'
+      });
     }
 
     // 6. Monitor (Fire and Forget)

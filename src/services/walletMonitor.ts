@@ -7,12 +7,11 @@ dotenv.config();
 // === CONFIGURATION ===
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const WALLET_1 = process.env.WALLET_1;
-const WALLET_2 = process.env.WALLET_2;
+const WALLETS_ENV = process.env.WALLETS;
 
 // Validation
-if (!TELEGRAM_TOKEN || !CHAT_ID || !WALLET_1 || !WALLET_2) {
-    console.warn("⚠️ Wallet Monitor: Missing configuration in .env. TELEGRAM_TOKEN, CHAT_ID, WALLET_1, and WALLET_2 are required.");
+if (!TELEGRAM_TOKEN || !CHAT_ID || !WALLETS_ENV) {
+    console.warn("⚠️ Wallet Monitor: Missing configuration in .env. TELEGRAM_TOKEN, CHAT_ID, and WALLETS are required.");
 }
 
 let bot: TelegramBot | null = null;
@@ -25,12 +24,12 @@ const connection = new Connection(
     { commitment: 'confirmed' }
 );
 
-let publicKey1: PublicKey | null = null;
-let publicKey2: PublicKey | null = null;
+let publicKeys: PublicKey[] = [];
 
 try {
-    if (WALLET_1) publicKey1 = new PublicKey(WALLET_1);
-    if (WALLET_2) publicKey2 = new PublicKey(WALLET_2);
+    if (WALLETS_ENV) {
+        publicKeys = WALLETS_ENV.split(',').map(addr => new PublicKey(addr.trim()));
+    }
 } catch (e) {
     console.error("❌ Wallet Monitor: Invalid Wallet Address", e);
 }
@@ -43,15 +42,12 @@ async function getSolBalance(pubkey: PublicKey): Promise<number> {
 }
 
 async function checkCombinedBalance() {
-    if (!bot || !publicKey1 || !publicKey2 || !CHAT_ID) return;
+    if (!bot || publicKeys.length === 0 || !CHAT_ID) return;
 
     try {
-        const [bal1, bal2] = await Promise.all([
-            getSolBalance(publicKey1),
-            getSolBalance(publicKey2),
-        ]);
+        const balances = await Promise.all(publicKeys.map(pk => getSolBalance(pk)));
 
-        const combined = bal1 + bal2;
+        const combined = balances.reduce((sum, bal) => sum + bal, 0);
 
         if (lastCombinedBalance === null) {
             lastCombinedBalance = combined;
@@ -82,7 +78,7 @@ ${emoji}: \`${formattedDiff} SOL\`
 }
 
 export function startWalletMonitor() {
-    if (!TELEGRAM_TOKEN || !CHAT_ID || !WALLET_1 || !WALLET_2) {
+    if (!TELEGRAM_TOKEN || !CHAT_ID || !WALLETS_ENV) {
         console.log("Skipping Wallet Monitor: Missing Config");
         return;
     }
