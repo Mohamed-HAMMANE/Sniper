@@ -6,12 +6,6 @@
     "image": "https://media.cdn.magiceden.dev/launchpad//0e190a95-1a21-409e-8ac8-3eb3afbad3ec"
   },
   {
-    "symbol": "powerup",
-    "name": "Hoopa Power Ups",
-    "floorPrice": 0.0,
-    "image": "https://creator-hub-prod.s3.us-east-2.amazonaws.com/powerup_pfp_1685031778749.jpeg"
-  },
-  {
     "symbol": "portals",
     "name": "Portals",
     "floorPrice": 0.0,
@@ -28,5 +22,11 @@
     "name": "<Player2>",
     "floorPrice": 0.0,
     "image": "https://7oo7vkazixdwr577bud2vt7mfsjrkrzix4axlsqofaexgxrwbuxa.arweave.net/-536qBlFx2j3_w0Hqs_sLJMVRyi_AXXKDigJc142DS4"
+  },
+  {
+    "symbol": "b33",
+    "name": "B33",
+    "floorPrice": 0.0,
+    "image": "https://gateway.pinit.io/ipfs/QmWcj8XpMFPUM7WruUoUu6d1FoQLKouP44HcS238ADwjoC/0"
   }
 ]

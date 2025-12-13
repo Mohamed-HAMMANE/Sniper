@@ -9,12 +9,16 @@ const BLOCK_ENGINE_URLS = {
     tokyo: 'https://tokyo.mainnet.block-engine.jito.wtf',
 };
 
-// Common Jito Tip Accounts (randomly select one to avoid contention)
+// Common Jito Tip Accounts (from official Jito docs 2024)
 const JITO_TIP_ACCOUNTS = [
-    '9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin',
-    'Cw8CFyM9FkoPhlbnF5oJtRMzMW5TOZR1wcqj7N4a55',
-    'ADaUMid9yfUytqMBgopXSjb3u96ptfiVKTS4aT96oBsF',
-    'DfXygSm4jCyNCyb3VxG6AI7i1LwnFRJ33o1eLvmXUo'
+    'ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49',
+    'Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY',
+    'HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe',
+    'DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh',
+    '96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5',
+    'ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt',
+    'DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL',
+    '3AVi9Tg9Uo68tJfuvoKvQKNWKkC5wPdSSdeBnizKZ6jT'
 ];
 
 // Default to NY for now, or make configurable

@@ -7,7 +7,7 @@ import { SSEBroadcaster } from './api/sseEndpoint';
 import { CollectionService } from './services/collectionService';
 import { TargetCollection, CollectionMetadata, Listing } from './types';
 import { decodeBase58 } from './utils/base58';
-import { startWalletMonitor } from './services/walletMonitor';
+import bs58 from 'bs58';
 import { FloorPriceManager } from './services/floorPriceManager';
 import { HistoryService } from './services/historyService';
 import { Keypair, Connection, VersionedTransaction, PublicKey, Transaction } from '@solana/web3.js';
@@ -139,6 +139,15 @@ app.post('/webhook', (req, res) => {
 
         if (priceSol <= 0) continue;
 
+        /*// Latency Check
+        if (event.timestamp) {
+          const latency = Date.now() - (event.timestamp * 1000);
+          console.log(`[Latency] ${latency}ms delay from Chain to Localhost`);
+        }*/
+
+        /*/ Internal Processing Check
+        const start = process.hrtime();*/
+
         const seller = eventData.seller;
         let auctionHouse = '';
         const expiry = eventData.expiration;
@@ -230,7 +239,21 @@ app.post('/webhook', (req, res) => {
           }
           break; // Found in target, break inner loop
         }
+
+        /*const end = process.hrtime(start);
+        const procTime = (end[0] * 1000 + end[1] / 1e6).toFixed(3);
+        console.log(`[Processing] Logic took ${procTime}ms`);*/
       } else if (event.type === 'UNKNOWN' && event.accountData) {
+
+        // Latency Check for UNKNOWN events
+        if (event.timestamp) {
+          const latency = Date.now() - (event.timestamp * 1000);
+          console.log(`[Latency] (UNKNOWN) ${latency}ms delay from Chain to Localhost`);
+        }
+
+        /*/ Internal Processing Check
+        const start = process.hrtime();*/
+
         // Handle UNKNOWN events (often unparsed listings)
         let price = 0;
         let isMagicEdenListing = false;
@@ -328,6 +351,10 @@ app.post('/webhook', (req, res) => {
             }
           }
         }
+
+        /*const end = process.hrtime(start);
+        const procTime = (end[0] * 1000 + end[1] / 1e6).toFixed(3);
+        console.log(`[Processing] (UNKNOWN) Logic took ${procTime}ms`);*/
       }
     }
   } catch (error) {
@@ -373,7 +400,6 @@ setInterval(async () => {
 app.listen(PORT, () => {
   console.log(`NFT Sniper running on port ${PORT}`);
   console.log('[Server] M2 Support Enabled (fresh build)');
-  startWalletMonitor();
 });
 
 // Shutdown
@@ -585,21 +611,38 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     transaction.message.recentBlockhash = blockhashToUse;
     transaction.sign([burnerWallet]);
 
+    // Get the actual signature from the signed transaction
+    const signature = bs58.encode(transaction.signatures[0]);
+    console.log(`[Buy] Transaction Signature: ${signature}`);
+
     // Log final serialized size
     const finalSerialized = transaction.serialize();
     console.log(`[Buy] Final serialized size: ${finalSerialized.length} bytes`);
 
     // 5. Execute
-    let signature = '';
     if (USE_JITO) {
-      console.log('[Buy] Sending via Jito Bundle...');
-      const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
-      // Pass the cached blockhash to avoid extra RPC call in JitoService
-      signature = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
+      try {
+        console.log('[Buy] Sending via Jito Bundle...');
+        const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
+        // Pass the cached blockhash to avoid extra RPC call in JitoService
+        const bundleId = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
+        console.log(`[Buy] Jito Bundle ID: ${bundleId}`);
+        // meaningful signature is already set above
+      } catch (error: any) {
+        console.error('[Buy] Jito failed:', error.message);
+        console.log('[Buy] Falling back to Standard RPC...');
+        const serializedTx = transaction.serialize();
+        await heliusConnection.sendRawTransaction(serializedTx, {
+          skipPreflight: true,
+          maxRetries: 0,
+          preflightCommitment: 'confirmed'
+        });
+      }
     } else {
       console.log('[Buy] Sending via Standard RPC...');
       const serializedTx = transaction.serialize();
-      signature = await heliusConnection.sendRawTransaction(serializedTx, {
+      // For standard RPC, the return value IS the signature, but it matches what we signed
+      await heliusConnection.sendRawTransaction(serializedTx, {
         skipPreflight: true,
         maxRetries: 0,
         preflightCommitment: 'confirmed'
