@@ -88,32 +88,47 @@ export class JitoService {
                 ]
             };
 
-            // Randomize Block Engine to avoid 429
             const endpoints = Object.values(BLOCK_ENGINE_URLS);
-            const randomUrl = endpoints[Math.floor(Math.random() * endpoints.length)];
-            console.log(`[Jito] Sending bundle to ${randomUrl}...`);
+            console.log(`[Jito] Shotgun! Sending to ${endpoints.length} regions simultaneously...`);
 
-            const response = await fetch(`${randomUrl}/api/v1/bundles`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            // Helper to send to one endpoint
+            const sendToEndpoint = async (url: string): Promise<string> => {
+                try {
+                    // console.log(`[Jito] Sending to ${url}...`);
+                    const response = await fetch(`${url}/api/v1/bundles`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-            if (!response.ok) {
-                throw new Error(`Jito HTTP Error: ${response.status} ${response.statusText}`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const data: any = await response.json();
+                    if (data.error) throw new Error(JSON.stringify(data.error));
+
+                    console.log(`[Jito] Success from ${url}`);
+                    return data.result;
+                } catch (err: any) {
+                    // console.log(`[Jito] Error from ${url}: ${err.message}`);
+                    throw err;
+                }
+            };
+
+            // Promise.any polyfill behavior: Return first success, reject if ALL fail
+            try {
+                const bundleId = await Promise.any(endpoints.map(url => sendToEndpoint(url)));
+                console.log(`[Jito] Bundle Accepted! ID: ${bundleId}`);
+                return bundleId;
+            } catch (aggregateError: any) {
+                console.error('[Jito] All regions failed.');
+                throw new Error('All Jito endpoints rejected the bundle (likely Rate Limited validation)');
             }
-
-            const data: any = await response.json();
-
-            if (data.error) {
-                throw new Error(`Jito API Error: ${JSON.stringify(data.error)}`);
-            }
-
-            const bundleId = data.result;
-            console.log(`[Jito] Bundle Sent! ID: ${bundleId}`);
-            return bundleId;
         } catch (error: any) {
-            console.error('[Jito] Failed to send bundle:', error.message);
+            // If it was the AggregateError from Promise.any, we already logged it.
+            // Just rethrow so server.ts knows to fallback.
+            console.error('[Jito] Shotgun failed:', error.message);
             throw error;
         }
     }
