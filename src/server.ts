@@ -435,6 +435,7 @@ app.post('/webhook', (req, res) => {
         let isMagicEdenListing = false;
         let seller = '';
         let expiry = 0;
+        let auctionHouse = '';
 
         for (const ix of instructions) {
           if (ix.programId === ME_V2_PROGRAM_ID && ix.data) {
@@ -468,6 +469,12 @@ app.post('/webhook', (req, res) => {
                   // Extra Fallback: Check accountKeys for signer if available in legacy
                   if (!seller && accountKeys.length > 0) {
                     seller = accountKeys[0];
+                  }
+
+                  // Extract Auction House
+                  const CANONICAL_AH = 'E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe';
+                  if (ix.accounts && ix.accounts.includes(CANONICAL_AH)) {
+                    auctionHouse = CANONICAL_AH;
                   }
 
                   /*/ LOGGING MATCH ATTEMPTS
@@ -531,14 +538,15 @@ app.post('/webhook', (req, res) => {
                   rank_statistical: itemMeta.rank_statistical,
                   tier_statistical: itemMeta.tier_statistical,
                   score_statistical: itemMeta.score_statistical,
-                  sellerExpiry: expiry
+                  sellerExpiry: expiry,
+                  auctionHouse: auctionHouse
                 };
 
                 broadcaster.broadcastListing(listing);
 
                 if (target.autoBuy) {
                   console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
-                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, expiry)
+                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry)
                     .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
                     .catch(err => {
                       if (err === 'SKIPPED_DUPLICATE') return;
