@@ -658,56 +658,74 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       }
     }
 
-    // 2. Build Query - ALWAYS fetch authoritative listing data first (Smart Fetch First)
+    // 2. Build Query
     const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '500000'; // Default 0.0005 SOL for better confirmation
+
+    let authSeller = seller;
+    let authPrice = price;
+    let authExpiry = sellerExpiry || 0;
+    let authTokenATA = sellerATA;
+    let authAuctionHouse = auctionHouse;
+
+    // FALLBACK: If we don't know the seller (e.g. Manual Buy from UI where seller was Unknown), we MUST fetch.
+    if (!seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown') {
+      console.log('[Buy] Missing Seller/ATA info. Falling back to Smart Fetch...');
+
+      const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
+      const detailsResp = await fetch(detailsUrl, {
+        headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
+      });
+
+      if (!detailsResp.ok) throw new Error(`Failed to fetch listing details: ${detailsResp.status}`);
+
+      const listings = await detailsResp.json() as any[];
+      if (!listings || listings.length === 0) throw new Error('No active listings found');
+
+      // Sort by price
+      listings.sort((a, b) => a.price - b.price);
+      const best = listings[0];
+
+      authSeller = best.seller;
+      authExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
+      authTokenATA = best.tokenAddress || undefined; // Let it be re-derived or used
+      authPrice = best.price;
+      authAuctionHouse = best.auctionHouse || auctionHouse;
+
+      console.log(`[Buy] Fallback resolved: Seller=${authSeller}, Price=${authPrice}`);
+    } else {
+      console.log(`[Buy] OPTIMISTIC MODE: Using Webhook data: Price=${authPrice}, Seller=${authSeller}`);
+    }
 
     /*
     // OPTIMIZATION: Commented out "Smart Fetch" for speed. Trusting Webhook Data.
-    // Smart Fetch First: Get authoritative listing details from ME
-    const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
-    console.log(`[Buy] Smart Fetch First - fetching: ${detailsUrl}`);
-
-    const detailsResp = await fetch(detailsUrl, {
-      headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
-    });
-
-    if (!detailsResp.ok) {
-      throw new Error(`Failed to fetch listing details: ${detailsResp.status} ${detailsResp.statusText}`);
-    }
-
-    const listings = await detailsResp.json() as any[];
-    if (!listings || listings.length === 0) {
-      throw new Error('No active listings found for this NFT');
-    }
-
-    // Sort by price and get best listing
-    listings.sort((a, b) => a.price - b.price);
-    const best = listings[0];
-
-    // Use authoritative data from ME API
-    const authSeller = best.seller || seller;
-    const authExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
-    const authTokenATA = best.tokenAddress || sellerATA;
-    const authPrice = best.price;
-    const authAuctionHouse = best.auctionHouse || auctionHouse;
-
-    console.log(`[Buy] Using authoritative data: Price=${authPrice}, Seller=${authSeller}, AH=${authAuctionHouse}, Expiry=${authExpiry}, TokenATA=${authTokenATA}`);
+    // ... (Original commented out code removed for brevity as we integrated it above)
     */
 
-    const authSeller = seller;
-    const authTokenATA = sellerATA;
-    const authPrice = price;
-    const authExpiry = sellerExpiry || 0;
-    const authAuctionHouse = auctionHouse;
+    // Re-derive ATA if we have a seller now but no ATA (and it's not Core)
+    if (!authTokenATA && authSeller && authSeller !== 'Unknown') {
+      // Check if Core again locally to be safe or reuse existing var if available in scope
+      const symbol = collectionService.findCollectionForMint(mint);
+      let isCoreLocal = false;
+      if (symbol) {
+        const col = collectionService.getCollection(symbol);
+        if (col && col.type === 'core') isCoreLocal = true;
+      }
 
-    console.log(`[Buy] OPTIMISTIC MODE: Using Webhook data: Price=${authPrice}, Seller=${authSeller}`);
+      if (!isCoreLocal) {
+        const sellerPubkey = new PublicKey(authSeller);
+        const mintPubkey = new PublicKey(mint);
+        authTokenATA = (await getAssociatedTokenAddress(mintPubkey, sellerPubkey)).toBase58();
+      } else {
+        authTokenATA = authSeller;
+      }
+    }
 
     // Build query with authoritative data
     const query = new URLSearchParams({
       buyer: buyerAddress,
       seller: authSeller,
       tokenMint: mint,
-      tokenATA: authTokenATA as string, // Force string (it WAS verified above or passed in)
+      tokenATA: authTokenATA as string,
       price: authPrice.toString(),
       sellerExpiry: authExpiry.toString(),
       prioFeeMicroLamports: PRIORITY_FEE
