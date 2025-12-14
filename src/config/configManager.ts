@@ -15,10 +15,15 @@ export class ConfigManager {
     try {
       if (fs.existsSync(CONFIG_PATH)) {
         const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
+        if (!data || data.trim().length === 0) return { targets: [] };
         return JSON.parse(data);
       }
     } catch (error) {
-      console.error('Error loading config:', error);
+      console.error('Config file corrupted or invalid, resetting to defaults.');
+      // Auto-repair
+      try {
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify({ targets: [] }, null, 2));
+      } catch (e) { }
     }
 
     // Return default config

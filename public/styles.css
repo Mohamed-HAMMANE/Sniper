@@ -1458,6 +1458,202 @@ a.listing-image-wrapper:hover {
 }
 
 .target-image:hover {
-  transform: scale(1.05);
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+/* ==================== UTILITIES ==================== */
+.hidden {
+  display: none !important;
+}
+
+/* ==================== SETUP MODAL ==================== */
+.setup-content {
+  max-width: 500px;
+  background: #13141f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.setup-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-group.full-width {
+  grid-column: span 2;
+}
+
+.control-input-lg {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 8px;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  transition: border-color 0.2s;
+}
+
+.control-input-lg:focus {
+  border-color: var(--accent);
+}
+
+select.control-input-lg {
+  appearance: none;
+  cursor: pointer;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.input-with-action {
+  display: flex;
+  gap: 10px;
+}
+
+.input-with-action input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 8px;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.input-with-action input:focus {
+  border-color: var(--accent);
+}
+
+.input-with-action button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 0 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.input-with-action button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-muted);
+}
+
+.input-with-action button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Preview Card */
+.preview-card {
+  display: flex;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.preview-card img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000;
+}
+
+.preview-info h3 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.preview-address {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-primary.full-width {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary.full-width:hover {
+  background: var(--accent-light);
+}
+
+.btn-primary.full-width:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Progress Bar */
+.setup-progress {
+  text-align: center;
+}
+
+.progress-bar-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.progress-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
 }

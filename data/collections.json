@@ -2,15 +2,11 @@
   {
     "symbol": "thatgoblin",
     "name": "ThatGoblins",
-    "floorPrice": 0.37,
+    "address": "AEzcJ2HwueHJkMmQeSYFv5tNGPDNvUYyR6wh89UHhGzv",
     "image": "https://media.cdn.magiceden.dev/launchpad//0e190a95-1a21-409e-8ac8-3eb3afbad3ec",
-    "type": "core"
-  },
-  {
-    "symbol": "b33",
-    "name": "B33",
-    "floorPrice": 0.0019,
-    "image": "https://gateway.pinit.io/ipfs/QmWcj8XpMFPUM7WruUoUu6d1FoQLKouP44HcS238ADwjoC/0",
-    "type": "core"
+    "floorPrice": 0.3799,
+    "count": 3333,
+    "type": "core",
+    "minRarity": "COMMON"
   }
 ]

@@ -44,7 +44,7 @@ function setupEventListeners() {
 
   addCollectionToggle?.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wrapper = addCollectionToggle.closest('.add-collection-wrapper');
+    const wrapper = document.querySelector('.add-collection-wrapper');
     wrapper.classList.toggle('open');
     collectionListContainer.classList.toggle('hidden');
   });
@@ -86,6 +86,9 @@ function connectSSE() {
     else if (msg.type === 'balanceUpdate') {
       updateBalanceDisplay(msg.data.balance);
     }
+    else if (msg.type === 'setup_progress') handleSetupProgress(msg.data);
+    else if (msg.type === 'setup_complete') handleSetupComplete(msg.data);
+    else if (msg.type === 'setup_error') handleSetupError(msg.data);
   };
 
   eventSource.onerror = () => {
@@ -134,6 +137,30 @@ function handleFloorPriceUpdate({ symbol, floorPrice }) {
 function renderCollectionWidget() {
   collectionListContainer.innerHTML = '';
   availableCollections.sort((a, b) => a.name.localeCompare(b.name));
+
+  // 1. Add "Create New" Button
+  const createBtn = document.createElement('div');
+  createBtn.className = 'collection-item create-new';
+  createBtn.style.borderBottom = '1px solid var(--border)';
+  createBtn.style.marginBottom = '4px';
+  createBtn.style.paddingBottom = '8px';
+  createBtn.onclick = (e) => {
+    e.stopPropagation();
+    document.getElementById('setup-modal').classList.remove('hidden');
+    document.getElementById('setup-form').classList.remove('hidden');
+    document.getElementById('setup-progress-container').classList.add('hidden');
+    // Close dropdown
+    document.querySelector('.add-collection-wrapper')?.classList.remove('open');
+    collectionListContainer.classList.add('hidden');
+  };
+  createBtn.innerHTML = `
+    <div style="width:24px;height:24px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;">+</div>
+    <div class="collection-info">
+      <span class="collection-name" style="color:var(--accent);">Setup New Collection</span>
+      <span class="collection-fp" style="font-size:9px;">Add to database & webhook</span>
+    </div>
+  `;
+  collectionListContainer.appendChild(createBtn);
 
   availableCollections.forEach(col => {
     const item = document.createElement('div');
@@ -629,4 +656,81 @@ function showToast(message, type = 'success') {
     toast.style.animation = 'toastFadeOut 0.3s forwards';
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+
+// ==================== SETUP MODAL (MANUAL) ====================
+window.closeSetup = function () {
+  document.getElementById('setup-modal').classList.add('hidden');
+}
+
+window.startInitialization = async function () {
+  const symbol = document.getElementById('setup-symbol').value.trim();
+  const address = document.getElementById('setup-address').value.trim();
+  const name = document.getElementById('setup-name').value.trim();
+  const image = document.getElementById('setup-image').value.trim();
+  const type = document.getElementById('setup-type').value;
+  const minRarity = document.getElementById('setup-rarity').value;
+
+  if (!symbol || !address || !name || !image) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-init-start');
+  btn.disabled = true;
+
+  document.getElementById('setup-form').classList.add('hidden');
+  document.getElementById('setup-progress-container').classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/setup/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol,
+        address,
+        name,
+        image,
+        type,
+        minRarity
+      })
+    });
+
+    if (!res.ok) throw new Error('Init failed');
+
+  } catch (e) {
+    showToast('Failed to start initialization', 'error');
+    document.getElementById('setup-form').classList.remove('hidden');
+    document.getElementById('setup-progress-container').classList.add('hidden');
+    btn.disabled = false;
+  }
+}
+
+// Add these to SSE handler in connectSSE()
+function handleSetupProgress(data) {
+  // Check if we are in the flow
+  const modal = document.getElementById('setup-modal');
+  if (modal.classList.contains('hidden')) return;
+
+  const bar = document.getElementById('setup-progress-fill');
+  const text = document.getElementById('setup-status-text');
+  const pct = document.getElementById('setup-percent');
+
+  if (bar && text && pct) {
+    bar.style.width = `${data.percent}%`;
+    text.textContent = data.message;
+    pct.textContent = `${data.percent}%`;
+  }
+}
+
+function handleSetupComplete(data) {
+  showToast(`Setup Complete! Found ${data.count} items.`, 'success');
+  closeSetup();
+  loadConfig(); // Refresh list
+}
+
+function handleSetupError(data) {
+  showToast(`Setup Failed: ${data.error}`, 'error');
+  closeSetup();
 }

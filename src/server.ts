@@ -16,6 +16,7 @@ import { JitoService } from './services/jitoService';
 import { BlockhashManager } from './services/blockhashManager';
 import { ConfirmationService } from './services/confirmationService';
 import { BalanceMonitor } from './services/balanceMonitor';
+import { SetupManager } from './services/setupManager';
 
 // Concurrency Control
 const ActiveMints = new Set<string>();
@@ -28,14 +29,20 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Initialize services
+const RPC_URL = process.env.RPC_URL || '';
+if (!RPC_URL) {
+  console.warn('⚠️ Warning: RPC_URL is not defined in .env. Some features may not work.');
+}
+
 const configManager = new ConfigManager();
 const cache = new ListingCache(60); // Cache for 60 minutes
 const collectionService = new CollectionService();
 const broadcaster = new SSEBroadcaster();
-const jitoService = new JitoService(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com');
-const blockhashManager = new BlockhashManager(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com');
-const confirmationService = new ConfirmationService(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', broadcaster);
-const balanceMonitor = new BalanceMonitor(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', broadcaster);
+const jitoService = new JitoService(RPC_URL);
+const blockhashManager = new BlockhashManager(RPC_URL);
+const confirmationService = new ConfirmationService(RPC_URL, broadcaster);
+const balanceMonitor = new BalanceMonitor(RPC_URL, broadcaster);
+const setupManager = new SetupManager(collectionService, broadcaster);
 
 // SSE endpoint
 app.get('/api/listings-stream', (req, res) => {
@@ -106,6 +113,28 @@ app.get('/api/stats', (req, res) => {
     connectedClients: broadcaster.getClientCount(),
     activeTargets: configManager.getTargets().length
   });
+});
+
+// Setup: Preview
+app.post('/api/setup/preview', async (req, res) => {
+  try {
+    const { address } = req.body;
+    if (!address) return res.status(400).json({ error: 'Missing address' });
+    const data = await setupManager.previewCollection(address);
+    res.json(data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Setup: Init
+app.post('/api/setup/init', async (req, res) => {
+  const { symbol, address, name, image, type, minRarity } = req.body;
+  if (!symbol || !address) return res.status(400).json({ error: 'Missing required fields' });
+
+  // Fire and forget - client listens to SSE
+  setupManager.initializeCollection(symbol, address, name, image, type, minRarity || 'COMMON');
+  res.json({ success: true, message: 'Initialization started' });
 });
 
 // Webhook Endpoint for Helius
@@ -415,9 +444,7 @@ process.on('SIGTERM', shutdown);
 
 // Buy Feature
 let heliusConnection: Connection | null = null;
-const RPC_URL = process.env.RPC_URL;
 if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
-else console.warn("⚠️ Warning: RPC_URL missing.");
 
 async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number): Promise<string> {
   // 0. Concurrency Check
