@@ -88,9 +88,12 @@ export class JitoService {
                 ]
             };
 
-            console.log(`[Jito] Sending bundle to ${JITO_URL}...`);
+            // Randomize Block Engine to avoid 429
+            const endpoints = Object.values(BLOCK_ENGINE_URLS);
+            const randomUrl = endpoints[Math.floor(Math.random() * endpoints.length)];
+            console.log(`[Jito] Sending bundle to ${randomUrl}...`);
 
-            const response = await fetch(`${JITO_URL}/api/v1/bundles`, {
+            const response = await fetch(`${randomUrl}/api/v1/bundles`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
