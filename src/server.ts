@@ -420,7 +420,7 @@ app.post('/webhook', (req, res) => {
             return { programId, data, accounts };
           });
 
-          console.log('[RawParser] Programs:', instructions.map(ix => ix.programId));
+          //console.log('[RawParser] Programs:', instructions.map(ix => ix.programId));
 
         } catch (e) {
           console.error('[RawParser] Warning: Could not parse raw tx structure', e);
@@ -442,8 +442,8 @@ app.post('/webhook', (req, res) => {
               const decodedData = decodeBase58(ix.data);
               const hexData = Buffer.from(decodedData).toString('hex');
 
-              console.log(`[RawParser] Found ME Instruction! Data: ${ix.data}`);
-              console.log(`[RawParser] Hex: ${hexData}`);
+              /*console.log(`[RawParser] Found ME Instruction! Data: ${ix.data}`);
+              console.log(`[RawParser] Hex: ${hexData}`);*/
 
               const SELL_DISC_1 = '1ff3f73b8653a5da';
               const SELL_DISC_2 = '3a32ac6fa697165e'; // New one
@@ -460,8 +460,8 @@ app.post('/webhook', (req, res) => {
                     seller = ix.accounts[0]; // First account in Sell instruction is usually seller/signer
                   }
 
-                  // LOGGING MATCH ATTEMPTS
-                  console.log(`[RawParser] Listing Confirmed for ${price} SOL. Checking match against ${targets.length} targets...`);
+                  /*/ LOGGING MATCH ATTEMPTS
+                  console.log(`[RawParser] Listing Confirmed for ${price} SOL. Checking match against ${targets.length} targets...`);*/
 
                   // Expiry
                   const expiryHex = hexData.substring(32, 48);

@@ -92,9 +92,10 @@ Since this bot relies on push notifications from the blockchain, you must connec
 3.  Create a new Webhook:
     - **Network**: Mainnet
     - **Webhook URL**: `https://your-ngrok-url.ngrok.io/webhook`
-    - **Transaction Types**: Select `NFT_LISTING` and `TRANSFER`.
+    - **Webhook Type**: `Raw` (Essential for <2s latency)
+    - **Transaction Types**: Select `Any` or `Transaction`.
     - **Account Addresses**: Add the collection addresses (Update Authorities or Candy Machine IDs).
-    - **Note**: Ensure you enable "Raw Transactions" or "Instructions" if available, to support the custom parser.
+    - **Note**: Do NOT use "Enhanced" or "NFT_LISTING" types as they add ~5s of latency. The bot now includes a custom Raw Parser.
 
 ## 🔮 Strategic Move: Low Latency VPS
 **Critical for Success:** 

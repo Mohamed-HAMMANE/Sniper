@@ -334,9 +334,9 @@ export class SetupManager {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         webhookURL: WEBHOOK_URL,
-                        transactionTypes: ['NFT_LISTING', 'UNKNOWN'], // UNKNOWN needed for ME
+                        transactionTypes: ['ANY'], // Raw webhook requires broadly compatible types
                         accountAddresses: updatedMints,
-                        webhookType: 'enhanced'
+                        webhookType: 'raw' // Changed from 'enhanced' for speed
                     })
                 });
 
@@ -348,9 +348,9 @@ export class SetupManager {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         webhookURL: WEBHOOK_URL,
-                        transactionTypes: ['NFT_LISTING', 'UNKNOWN'],
+                        transactionTypes: ['ANY'],
                         accountAddresses: newMints,
-                        webhookType: 'enhanced'
+                        webhookType: 'raw'
                     })
                 });
             }
