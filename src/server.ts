@@ -387,6 +387,145 @@ app.post('/webhook', (req, res) => {
         /*const end = process.hrtime(start);
         const procTime = (end[0] * 1000 + end[1] / 1e6).toFixed(3);
         console.log(`[Processing] (UNKNOWN) Logic took ${procTime}ms`);*/
+      } else if (event.version !== undefined || event.transaction) {
+        // Handle RAW Helius/RPC Transaction
+        const latency = Date.now() - ((event.blockTime || event.timestamp || (Date.now() / 1000)) * 1000);
+        console.log(`[Latency] (RAW) ${latency.toFixed(0)}ms`);
+
+        // Normalization
+        let instructions: any[] = [];
+        let accountKeys: string[] = [];
+
+        try {
+          // 1. Build Account List
+          // Check if Legacy or V0
+          const msg = event.transaction.message;
+          const meta = event.meta;
+
+          if (Array.isArray(msg.accountKeys)) {
+            // Likely Legacy or simplified
+            accountKeys = msg.accountKeys.map((k: any) => typeof k === 'string' ? k : k.pubkey);
+          } else if (msg.staticAccountKeys) {
+            // V0
+            accountKeys = [...msg.staticAccountKeys];
+            if (meta && meta.loadedAddresses) {
+              accountKeys.push(...(meta.loadedAddresses.writable || []));
+              accountKeys.push(...(meta.loadedAddresses.readonly || []));
+            }
+          }
+
+          // 2. Normalize Instructions
+          const rawIxs = msg.instructions || msg.compiledInstructions || [];
+          instructions = rawIxs.map((ix: any) => {
+            const programId = accountKeys[ix.programIdIndex];
+            const data = ix.data; // usually base58
+            const accounts = ix.accounts || ix.accountKeyIndexes?.map((idx: number) => accountKeys[idx]);
+            return { programId, data, accounts };
+          });
+
+        } catch (e) {
+          console.error('[RawParser] Warning: Could not parse raw tx structure', e);
+          continue;
+        }
+
+        // Reuse parsing logic
+        const ME_V2_PROGRAM_ID = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
+        const SELL_DISCRIMINATOR = '1ff3f73b8653a5da';
+
+        let price = 0;
+        let isMagicEdenListing = false;
+        let seller = '';
+        let expiry = 0;
+
+        for (const ix of instructions) {
+          if (ix.programId === ME_V2_PROGRAM_ID && ix.data) {
+            try {
+              const decodedData = decodeBase58(ix.data);
+              const hexData = Buffer.from(decodedData).toString('hex');
+              if (hexData.startsWith(SELL_DISCRIMINATOR)) {
+                const priceHex = hexData.substring(16, 32);
+                if (priceHex.length === 16) {
+                  const buffer = Buffer.from(priceHex, 'hex');
+                  price = Number(buffer.readBigUInt64LE(0)) / 1_000_000_000;
+                  isMagicEdenListing = true;
+
+                  // Try to find seller in accounts (Signer / Index 0 usually)
+                  if (ix.accounts && ix.accounts.length > 0) {
+                    seller = ix.accounts[0]; // First account in Sell instruction is usually seller/signer
+                  }
+
+                  // Expiry
+                  const expiryHex = hexData.substring(32, 48);
+                  if (expiryHex.length === 16) {
+                    const buf = Buffer.from(expiryHex, 'hex');
+                    const val = Number(buf.readBigInt64LE(0));
+                    expiry = val === -1 ? 0 : val;
+                  }
+                  break;
+                }
+              }
+            } catch (e) { }
+          }
+        }
+
+        if (isMagicEdenListing && price > 0) {
+          // Find Mint (Account that is NOT seller, NOT program, NOT system...)
+          // Easier: Check all accounts against our watchlist
+          for (const potentialMint of accountKeys) {
+            for (const target of targets) {
+              const itemMeta = collectionService.getItem(target.symbol, potentialMint);
+              if (itemMeta) {
+                // Found a watched item in this transaction
+                if (price > target.priceMax) continue;
+
+                // Rarity Check
+                const rarityType = target.rarityType || 'statistical';
+                let itemTier = rarityType === 'additive' ? (itemMeta.tier_additive || 'COMMON') : (itemMeta.tier_statistical || 'COMMON');
+                let itemRank = rarityType === 'additive' ? (itemMeta.rank_additive || 0) : (itemMeta.rank_statistical || 0);
+
+                if (target.minRarity) {
+                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+                  const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
+                  if (itemRarityVal < targetRarityVal) continue;
+                }
+
+                const listing: Listing = {
+                  source: 'MagicEden',
+                  mint: potentialMint,
+                  price: price,
+                  listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
+                  timestamp: (event.blockTime || Date.now() / 1000) * 1000,
+                  seller: seller || 'Unknown',
+                  name: itemMeta.name,
+                  symbol: target.symbol,
+                  imageUrl: itemMeta.image,
+                  rank: itemRank,
+                  rarity: itemTier,
+                  rank_additive: itemMeta.rank_additive,
+                  tier_additive: itemMeta.tier_additive,
+                  score_additive: itemMeta.score_statistical,
+                  rank_statistical: itemMeta.rank_statistical,
+                  tier_statistical: itemMeta.tier_statistical,
+                  score_statistical: itemMeta.score_statistical,
+                  sellerExpiry: expiry
+                };
+
+                broadcaster.broadcastListing(listing);
+
+                if (target.autoBuy) {
+                  console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
+                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, expiry)
+                    .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                    .catch(err => {
+                      if (err === 'SKIPPED_DUPLICATE') return;
+                      console.error(`[AutoBuy] FAILED: ${err.message}`)
+                    });
+                }
+                break;
+              }
+            }
+          }
+        }
       }
     }
   } catch (error) {
