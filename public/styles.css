@@ -2,6 +2,43 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ==================== DESIGN TOKENS ==================== */
+/* Spin Animation */
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.5s linear;
+}
+
+.balance-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: #00ff9d;
+  background: rgba(0, 255, 157, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 8px;
+  cursor: default;
+}
+
+.icon-btn-small {
+  background: none;
+  border: none;
+  color: #889;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.icon-btn-small:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 :root {
   /* Background */
   --bg-base: #0a0a0f;
@@ -347,183 +384,283 @@ body {
   padding-right: 4px;
 }
 
-/* ==================== TARGET CARD - COMPACT ==================== */
-.target-tag {
+/* ==================== TARGET CARD - PREMIUM REDESIGN ==================== */
+.target-card {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px;
+  border-radius: var(--radius-md);
+  padding: 10px;
   display: flex;
+  flex-direction: column;
   gap: 8px;
   transition: all var(--transition-fast);
 }
 
-.target-tag:hover {
+.target-card:hover {
   border-color: var(--border-hover);
   background: var(--bg-hover);
 }
 
-.target-image {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-xs);
-  object-fit: cover;
-  flex-shrink: 0;
+/* Header Row */
+.target-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.target-image-placeholder {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-xs);
+.target-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+}
+
+.target-thumb:hover {
+  transform: scale(1.08);
+}
+
+.target-thumb-placeholder {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 16px;
+  cursor: pointer;
 }
 
-.target-info {
+.target-title-group {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.target-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 2px;
 }
 
 .target-name {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
 
-.btn-remove-target {
+.target-name:hover {
+  color: var(--accent-light);
+}
+
+.target-floor-price {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+/* Header Actions */
+.target-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Toggle Switch */
+.auto-toggle {
+  position: relative;
+  cursor: pointer;
+}
+
+.auto-toggle input {
+  display: none;
+}
+
+.toggle-track {
+  display: block;
+  width: 32px;
+  height: 18px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+}
+
+.auto-toggle.active .toggle-track {
+  background: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.auto-toggle.active .toggle-thumb {
+  left: 16px;
+  background: white;
+}
+
+.auto-toggle:hover .toggle-track {
+  border-color: var(--text-secondary);
+}
+
+/* Remove Button */
+.btn-remove {
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px 4px;
-  font-size: 14px;
-  line-height: 1;
+  padding: 4px;
   border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all var(--transition-fast);
 }
 
-.btn-remove-target:hover {
+.btn-remove:hover {
   color: var(--danger);
   background: var(--danger-dim);
 }
 
-.target-details {
+/* Controls Row */
+.target-card-controls {
   display: flex;
-  align-items: center;
   gap: 6px;
-  font-size: 10px;
-  color: var(--text-muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
 }
 
-.target-floor {
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  font-size: 10px;
-}
-
-.target-edit-row {
+.control-group {
   display: flex;
-  gap: 4px;
-  margin-top: 2px;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
 }
 
-.edit-input-group {
-  display: flex;
-  align-items: center;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  padding: 0 6px;
-  height: 24px;
-}
-
-.edit-input-group:focus-within {
-  border-color: var(--accent);
-}
-
-.edit-label {
-  font-size: 9px;
-  color: var(--text-muted);
-}
-
-.inline-input {
-  background: transparent;
-  border: none;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  width: 40px;
-  outline: none;
-  font-weight: 500;
-}
-
-.inline-select {
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-size: 9px;
+.control-label {
+  font-size: 8px;
   font-weight: 600;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
+  color: var(--text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.inline-select:hover {
+.control-input {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 6px;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.control-input:focus {
   border-color: var(--accent);
 }
 
-/* Rarity colors */
-.rarity-select.common {
+/* Rarity Indicator with Colored Left Border */
+.rarity-indicator {
+  position: relative;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+
+.rarity-indicator::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--text-muted);
+  transition: background var(--transition-fast);
+}
+
+.rarity-indicator.common::before {
   background: #64748b;
-  color: white;
-  border: none;
 }
 
-.rarity-select.uncommon {
+.rarity-indicator.uncommon::before {
   background: #10b981;
-  color: white;
-  border: none;
 }
 
-.rarity-select.rare {
+.rarity-indicator.rare::before {
   background: #3b82f6;
-  color: white;
-  border: none;
 }
 
-.rarity-select.epic {
+.rarity-indicator.epic::before {
   background: #8b5cf6;
-  color: white;
-  border: none;
 }
 
-.rarity-select.legendary {
+.rarity-indicator.legendary::before {
   background: #f59e0b;
-  color: #1a1a1a;
-  border: none;
 }
 
-.rarity-select.mythic {
+.rarity-indicator.mythic::before {
   background: #ef4444;
-  color: white;
-  border: none;
+}
+
+.rarity-dropdown {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 6px 4px 10px;
+  width: 100%;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  transition: border-color var(--transition-fast);
+}
+
+.rarity-dropdown:hover,
+.rarity-dropdown:focus {
+  border-color: var(--accent);
+}
+
+.type-dropdown {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 6px;
+  width: 100%;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.type-dropdown:hover,
+.type-dropdown:focus {
+  border-color: var(--accent);
+}
+
+/* Legacy support - keeping old classes for backward compat */
+.target-tag {
+  display: none;
 }
 
 /* ==================== SIDEBAR FOOTER ==================== */
@@ -575,6 +712,9 @@ body {
 .sidebar.collapsed .add-collection-wrapper,
 .sidebar.collapsed .section-title span:first-child,
 .sidebar.collapsed .target-info,
+.sidebar.collapsed .target-title-group,
+.sidebar.collapsed .target-header-actions,
+.sidebar.collapsed .target-card-controls,
 .sidebar.collapsed .status-label,
 .sidebar.collapsed .stats span:last-child {
   display: none;
@@ -595,6 +735,15 @@ body {
 
 .sidebar.collapsed .target-tag {
   padding: 5px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .target-card {
+  padding: 6px;
+  justify-content: center;
+}
+
+.sidebar.collapsed .target-card-header {
   justify-content: center;
 }
 
@@ -849,6 +998,81 @@ body {
 .listing-link:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+/* Clickable image wrapper */
+a.listing-image-wrapper {
+  cursor: pointer;
+  display: block;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+a.listing-image-wrapper:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 12px rgba(139, 92, 246, 0.3);
+}
+
+/* Inline Buy Button (compact) */
+.btn-buy-now-inline {
+  background: var(--gradient-accent);
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 10px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-buy-now-inline:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.btn-buy-now-inline:disabled {
+  background: #334155;
+  color: #94a3b8;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Legacy full-width buy button (kept for backward compat) */
+.btn-buy-now {
+  flex: 1;
+  background: var(--success);
+  color: #000;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  width: 100%;
+}
+
+.btn-buy-now:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-buy-now:disabled {
+  background: #334155;
+  color: #94a3b8;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-buy-now.success {
+  background: #8b5cf6;
+  /* Turn purple on success */
+  color: #fff;
 }
 
 /* ==================== RARITY BADGES - COMPACT ==================== */
@@ -1234,6 +1458,202 @@ body {
 }
 
 .target-image:hover {
-  transform: scale(1.05);
   box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+/* ==================== UTILITIES ==================== */
+.hidden {
+  display: none !important;
+}
+
+/* ==================== SETUP MODAL ==================== */
+.setup-content {
+  max-width: 500px;
+  background: #13141f;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.setup-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-group.full-width {
+  grid-column: span 2;
+}
+
+.control-input-lg {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 8px;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  transition: border-color 0.2s;
+}
+
+.control-input-lg:focus {
+  border-color: var(--accent);
+}
+
+select.control-input-lg {
+  appearance: none;
+  cursor: pointer;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.input-with-action {
+  display: flex;
+  gap: 10px;
+}
+
+.input-with-action input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 8px;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.input-with-action input:focus {
+  border-color: var(--accent);
+}
+
+.input-with-action button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  padding: 0 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.input-with-action button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-muted);
+}
+
+.input-with-action button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Preview Card */
+.preview-card {
+  display: flex;
+  gap: 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.preview-card img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000;
+}
+
+.preview-info h3 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.preview-address {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 6px;
+  word-break: break-all;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-primary.full-width {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-primary.full-width:hover {
+  background: var(--accent-light);
+}
+
+.btn-primary.full-width:disabled {
+  background: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Progress Bar */
+.setup-progress {
+  text-align: center;
+}
+
+.progress-bar-track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.progress-status {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
 }

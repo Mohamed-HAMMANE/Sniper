@@ -44,7 +44,7 @@ function setupEventListeners() {
 
   addCollectionToggle?.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wrapper = addCollectionToggle.closest('.add-collection-wrapper');
+    const wrapper = document.querySelector('.add-collection-wrapper');
     wrapper.classList.toggle('open');
     collectionListContainer.classList.toggle('hidden');
   });
@@ -73,6 +73,22 @@ function connectSSE() {
     if (msg.type === 'listing') handleNewListing(msg.data);
     else if (msg.type === 'listing-update') handleListingUpdate(msg.data);
     else if (msg.type === 'floorPriceUpdate') handleFloorPriceUpdate(msg.data);
+    else if (msg.type === 'tx_confirmed') {
+      showToast(`✅ Transaction Confirmed!`, 'success');
+      if (soundEnabled) try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=').play().catch(e => { }); } catch (e) { }
+    }
+    else if (msg.type === 'tx_failed') {
+      showToast(`❌ Transaction Failed: ${JSON.stringify(msg.data.error)}`, 'error');
+    }
+    else if (msg.type === 'tx_timeout') {
+      showToast(`⚠️ Transaction Timeout (Check Solscan)`, 'error');
+    }
+    else if (msg.type === 'balanceUpdate') {
+      updateBalanceDisplay(msg.data.balance);
+    }
+    else if (msg.type === 'setup_progress') handleSetupProgress(msg.data);
+    else if (msg.type === 'setup_complete') handleSetupComplete(msg.data);
+    else if (msg.type === 'setup_error') handleSetupError(msg.data);
   };
 
   eventSource.onerror = () => {
@@ -121,6 +137,30 @@ function handleFloorPriceUpdate({ symbol, floorPrice }) {
 function renderCollectionWidget() {
   collectionListContainer.innerHTML = '';
   availableCollections.sort((a, b) => a.name.localeCompare(b.name));
+
+  // 1. Add "Create New" Button
+  const createBtn = document.createElement('div');
+  createBtn.className = 'collection-item create-new';
+  createBtn.style.borderBottom = '1px solid var(--border)';
+  createBtn.style.marginBottom = '4px';
+  createBtn.style.paddingBottom = '8px';
+  createBtn.onclick = (e) => {
+    e.stopPropagation();
+    document.getElementById('setup-modal').classList.remove('hidden');
+    document.getElementById('setup-form').classList.remove('hidden');
+    document.getElementById('setup-progress-container').classList.add('hidden');
+    // Close dropdown
+    document.querySelector('.add-collection-wrapper')?.classList.remove('open');
+    collectionListContainer.classList.add('hidden');
+  };
+  createBtn.innerHTML = `
+    <div style="width:24px;height:24px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;">+</div>
+    <div class="collection-info">
+      <span class="collection-name" style="color:var(--accent);">Setup New Collection</span>
+      <span class="collection-fp" style="font-size:9px;">Add to database & webhook</span>
+    </div>
+  `;
+  collectionListContainer.appendChild(createBtn);
 
   availableCollections.forEach(col => {
     const item = document.createElement('div');
@@ -287,39 +327,53 @@ function renderActiveTargets() {
     const name = col ? col.name : target.symbol;
     const image = col?.image || '';
     const fp = col?.floorPrice;
+    const rarityShort = (target.minRarity || 'COMMON').substring(0, 3);
+    const rarityClass = (target.minRarity || 'common').toLowerCase();
 
     const tag = document.createElement('div');
-    tag.className = 'target-tag';
+    tag.className = 'target-card';
     tag.dataset.symbol = target.symbol;
 
     tag.innerHTML = `
-      ${image
-        ? `<img src="${image}" class="target-image" alt="${name}" onclick="openChart('${target.symbol}')">`
-        : `<div class="target-image-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
+      <div class="target-card-header">
+        ${image
+        ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="openChart('${target.symbol}')">`
+        : `<div class="target-thumb-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
       }
-      <div class="target-info">
-        <div class="target-header">
+        <div class="target-title-group">
           <span class="target-name" onclick="openChart('${target.symbol}')">${name}</span>
-          <button class="btn-remove-target" onclick="removeTarget('${target.symbol}')" title="Remove">×</button>
+          <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
         </div>
-        <div class="target-details">
-          <span class="target-floor">FP: ${fp ? fp.toFixed(3) : '-.---'} SOL</span>
-          <div class="edit-input-group">
-            <span class="edit-label">&lt;</span>
-            <input type="number" class="inline-input" value="${target.priceMax}" step="0.1" onchange="updateTarget('${target.symbol}', 'priceMax', this.value)">
-            <span class="edit-label">SOL</span>
+        <div class="target-header-actions">
+          <label class="auto-toggle ${target.autoBuy ? 'active' : ''}" title="Auto Buy">
+            <input type="checkbox" ${target.autoBuy ? 'checked' : ''} onchange="updateTarget('${target.symbol}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+          <button class="btn-remove" onclick="removeTarget('${target.symbol}')" title="Remove">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="target-card-controls">
+        <div class="control-group">
+          <span class="control-label">Max</span>
+          <input type="number" class="control-input" value="${target.priceMax}" step="0.1" onchange="updateTarget('${target.symbol}', 'priceMax', this.value)">
+        </div>
+        <div class="control-group">
+          <span class="control-label">Min</span>
+          <div class="rarity-indicator ${rarityClass}">
+            <select class="rarity-dropdown" onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.parentElement.className='rarity-indicator '+this.value.toLowerCase();">
+              ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
+        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r.substring(0, 3)}</option>`
+      ).join('')}
+            </select>
           </div>
         </div>
-        <div class="target-edit-row">
-          <select class="inline-select rarity-select ${(target.minRarity || 'common').toLowerCase()}" 
-            onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.className='inline-select rarity-select '+this.value.toLowerCase();">
-            ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
-        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r}</option>`
-      ).join('')}
-          </select>
-          <select class="inline-select" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
-            <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>STAT</option>
-            <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>ADD</option>
+        <div class="control-group">
+          <span class="control-label">Type</span>
+          <select class="type-dropdown" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
+            <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>Stat</option>
+            <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>Add</option>
           </select>
         </div>
       </div>
@@ -463,12 +517,13 @@ function createListingCard(listing) {
     secHTML = `<span class="rarity-compact"><span class="rarity-letter ${listing.tier_statistical?.toLowerCase() || ''}">#${listing.rank_statistical} ${t}</span></span>`;
   }
 
+  // Update card creation to pass seller
   card.innerHTML = `
-    <div class="listing-image-wrapper">
+    <a href="${listing.listingUrl}" target="_blank" class="listing-image-wrapper" title="View on Magic Eden">
       ${listing.imageUrl
       ? `<img src="${listing.imageUrl}" class="listing-image" alt="" onerror="this.parentElement.innerHTML='<div class=\\'no-image\\'>🖼</div>'">`
       : '<div class="no-image">🖼</div>'}
-    </div>
+    </a>
     <div class="listing-info">
       <div class="listing-title">${escapeHtml(listing.name || 'Unnamed')}</div>
       <div class="listing-meta">
@@ -482,13 +537,45 @@ function createListingCard(listing) {
         ${fpStr}
         <span class="listing-price ${priceClass}">${listing.price.toFixed(3)} SOL</span>
       </div>
-      <a href="${listing.listingUrl}" target="_blank" class="listing-link">View</a>
-    </div>
-  `;
+      <button class="btn-buy-now-inline" onclick="buyListing('${listing.mint}', ${listing.price}, '${listing.seller}', '${listing.auctionHouse || ''}', ${listing.sellerExpiry || 0}, this)">Buy Now</button>
+    </div>`;
 
   setTimeout(() => card.classList.remove('new'), 600);
   return card;
 }
+
+window.buyListing = async function (mint, price, seller, auctionHouse, sellerExpiry, btn) {
+  if (btn.disabled) return;
+
+  if (!confirm(`Confirm BUY for ${price} SOL?`)) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '...';
+
+  try {
+    const res = await fetch('/api/buy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mint, price, seller, auctionHouse, sellerExpiry })
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      btn.textContent = 'SNIPED';
+      btn.classList.add('success');
+      showToast(`SNIPED! TX: ${data.signature.slice(0, 8)}...`, 'success');
+      new Audio('data:audio/wav;base64,UklGRiQA...'); // TODO: Add better sound
+    } else {
+      throw new Error(data.error || 'Failed');
+    }
+  } catch (e) {
+    btn.textContent = originalText;
+    btn.disabled = false;
+    showToast(`Buy Failed: ${e.message}`, 'error');
+  }
+};
 
 function escapeHtml(text) {
   const d = document.createElement('div');
@@ -505,6 +592,29 @@ setInterval(() => {
     }
   });
 }, 10000);
+
+// Balance Refresh
+document.getElementById('refresh-balance-btn')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/balance/refresh', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      updateBalanceDisplay(data.balance);
+      showToast('Balance updated', 'success');
+    }
+  } catch (e) {
+    console.error('Balance error', e);
+  }
+});
+
+function updateBalanceDisplay(solAmount) {
+  const el = document.getElementById('balance-display');
+  if (el) {
+    el.textContent = `${Number(solAmount).toFixed(3)} SOL`;
+    if (solAmount < 0.1) el.style.color = '#ff4d4d'; // Red warning
+    else el.style.color = '#00ff9d'; // Green
+  }
+}
 
 // ==================== CLEAR FEED ====================
 async function clearFeed() {
@@ -546,4 +656,81 @@ function showToast(message, type = 'success') {
     toast.style.animation = 'toastFadeOut 0.3s forwards';
     setTimeout(() => toast.remove(), 300);
   }, 3000);
+}
+
+
+// ==================== SETUP MODAL (MANUAL) ====================
+window.closeSetup = function () {
+  document.getElementById('setup-modal').classList.add('hidden');
+}
+
+window.startInitialization = async function () {
+  const symbol = document.getElementById('setup-symbol').value.trim();
+  const address = document.getElementById('setup-address').value.trim();
+  const name = document.getElementById('setup-name').value.trim();
+  const image = document.getElementById('setup-image').value.trim();
+  const type = document.getElementById('setup-type').value;
+  const minRarity = document.getElementById('setup-rarity').value;
+
+  if (!symbol || !address || !name || !image) {
+    showToast('Please fill in all fields', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-init-start');
+  btn.disabled = true;
+
+  document.getElementById('setup-form').classList.add('hidden');
+  document.getElementById('setup-progress-container').classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/setup/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol,
+        address,
+        name,
+        image,
+        type,
+        minRarity
+      })
+    });
+
+    if (!res.ok) throw new Error('Init failed');
+
+  } catch (e) {
+    showToast('Failed to start initialization', 'error');
+    document.getElementById('setup-form').classList.remove('hidden');
+    document.getElementById('setup-progress-container').classList.add('hidden');
+    btn.disabled = false;
+  }
+}
+
+// Add these to SSE handler in connectSSE()
+function handleSetupProgress(data) {
+  // Check if we are in the flow
+  const modal = document.getElementById('setup-modal');
+  if (modal.classList.contains('hidden')) return;
+
+  const bar = document.getElementById('setup-progress-fill');
+  const text = document.getElementById('setup-status-text');
+  const pct = document.getElementById('setup-percent');
+
+  if (bar && text && pct) {
+    bar.style.width = `${data.percent}%`;
+    text.textContent = data.message;
+    pct.textContent = `${data.percent}%`;
+  }
+}
+
+function handleSetupComplete(data) {
+  showToast(`Setup Complete! Found ${data.count} items.`, 'success');
+  closeSetup();
+  loadConfig(); // Refresh list
+}
+
+function handleSetupError(data) {
+  showToast(`Setup Failed: ${data.error}`, 'error');
+  closeSetup();
 }

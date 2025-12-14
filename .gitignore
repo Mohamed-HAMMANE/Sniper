@@ -3,5 +3,5 @@ dist/
 config.json
 *.log
 .DS_Store
-data/collections.json
 .env
+data/

@@ -72,8 +72,12 @@
                     <span class="status-label">Disconnected</span>
                 </div>
                 <div id="stats-display" class="stats">
-                    <span>📦</span>
-                    <span id="cache-count">0</span>
+                    <span id="balance-display" class="balance-badge" title="Balance">
+                        Run Server
+                    </span>
+                    <button id="refresh-balance-btn" class="icon-btn-small" title="Refresh Balance">
+                        🔄
+                    </button>
                 </div>
             </div>
         </aside>
@@ -129,7 +133,7 @@
     </div>
 
     <div id="toast-container" class="toast-container"></div>
-    
+
     <!-- Chart Modal -->
     <div id="chart-modal" class="modal-overlay hidden">
         <div class="modal-content">
@@ -145,6 +149,80 @@
             </div>
             <div class="chart-container">
                 <canvas id="priceChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Setup Modal (Manual Entry) -->
+    <div id="setup-modal" class="modal-overlay hidden">
+        <div class="modal-content setup-content">
+            <div class="modal-header">
+                <h2>Add Collection</h2>
+                <button class="modal-close" onclick="closeSetup()">×</button>
+            </div>
+
+            <div class="setup-body">
+                <!-- Manual Form -->
+                <div id="setup-form" class="form-grid">
+                    <div class="form-group">
+                        <label>Collection Symbol</label>
+                        <input type="text" id="setup-symbol" placeholder="e.g. goblins" class="control-input-lg">
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Collection Address</label>
+                        <input type="text" id="setup-address" placeholder="e.g. AEzcJ..." class="control-input-lg">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="setup-name" placeholder="e.g. ThatGoblins" class="control-input-lg">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select id="setup-type" class="control-input-lg">
+                            <option value="standard">Standard</option>
+                            <option value="core">MPL Core</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Image URL</label>
+                        <input type="text" id="setup-image" placeholder="https://..." class="control-input-lg">
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Minimum Rarity to Watch</label>
+                        <select id="setup-rarity" class="control-input-lg">
+                            <option value="COMMON">All Rarities (Common+)</option>
+                            <option value="UNCOMMON">Uncommon+</option>
+                            <option value="RARE">Rare+</option>
+                            <option value="EPIC">Epic+</option>
+                            <option value="LEGENDARY">Legendary+</option>
+                            <option value="MYTHIC">Mythic Only</option>
+                        </select>
+                        <small style="color: var(--text-muted); font-size: 10px; margin-top: 4px; display: block;">
+                            Only items with this rarity or higher will be registered in the webhook.
+                        </small>
+                    </div>
+
+                    <button id="btn-init-start" class="btn-primary full-width" style="margin-top: 10px;"
+                        onclick="startInitialization()">
+                        Initialize & Scan Database
+                    </button>
+                </div>
+
+                <!-- Progress (Hidden initially) -->
+                <div id="setup-progress-container" class="setup-progress hidden">
+                    <div class="progress-bar-track">
+                        <div id="setup-progress-fill" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-status">
+                        <span id="setup-status-text">Starting...</span>
+                        <span id="setup-percent">0%</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

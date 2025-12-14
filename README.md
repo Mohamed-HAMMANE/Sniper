@@ -11,14 +11,14 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **🎯 Multi-Target Support**: Monitor multiple collections simultaneously with unique constraints (Max Price, Min Rarity) for each.
 - **🧠 Advanced Parsing**: Custom decoder for **Magic Eden V2** instructions, detecting listings even when standard parsers return "Unknown" transaction types.
 - **🛡️ Rarity Integration**: Filter snipes by rarity rank (Statistical or Additive scaling) to find underpriced rare items.
-- **👀 Wallet Monitoring**: Tracks SOL balances of configured burner/main wallets and sends **Telegram Alerts** on any balance change (in/out).
+- **� Auto-Buying Engine**: Integrated **Jito Bundles** support to bypass network congestion and protect against sandwiches. Includes "Smart Fetch" to validate listing parameters before execution.
 
 ### Modern Dashboard UI
 - **📊 Real-Time Charts**: Interactive floor price history charts for every watched collection.
-- **🌊 Live Feed**: Real-time stream of incoming listings with "Good/Bad Deal" visual indicators based on floor price difference.
-- **🔈 Audio/Visual Alerts**: Sound effects and toast notifications for new snipes.
+- **🌊 Live Feed**: Real-time stream of incoming listings with "Good/Bad Deal" visual indicators.
+- **⚡ Instant Buy**: One-click manual buy or fully automated sniping with a burner wallet.
 - **📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
-- **💾 Auto-Persistence**: Automatically saves floor prices and target configurations to disk, ensuring your setup survives restarts.
+- **💾 Auto-Persistence**: Automatically saves floor prices and target configurations to disk.
 
 ## 🛠️ Project Structure
 
@@ -30,7 +30,8 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
     /listingCache      - Deduplication to prevent alert spam
     /historyService    - Tracks floor price history
     /floorPriceManager - Background floor price updates
-    /walletMonitor     - Tracks wallet balances & sends Telegram alerts
+    /balanceMonitor    - Tracks burner wallet balance
+    /jitoService       - Jito Bundle integration
   /api
     /sseEndpoint       - Real-time client broadcasting
   /config              - Configuration manager
@@ -48,8 +49,8 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 ### 1. Prerequisites
 - **Node.js** (v16+)
 - **Helius API Key** (for Webhooks)
-- **Telegram Bot Token & Chat ID** (for Wallet Alerts)
-- **Ngrok** (or another way to expose localhost to the internet)
+- **Private Key** (for Burner Wallet)
+- **Ngrok** (for local testing) or **VPS** (for production)
 
 ### 2. Installation
 
@@ -60,13 +61,17 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 
 2. Create a `.env` file in the root directory:
    ```env
-   # Telegram Configuration
-   TELEGRAM_TOKEN=your_bot_token
-   CHAT_ID=your_chat_id
-
-   # Wallet Monitoring (Optional)
-   WALLET_1=wallet_address_1
-   WALLET_2=wallet_address_2
+   # RPC & APIs
+   RPC_URL=https://mainnet.helius-rpc.com/?api-key=...
+   ME_API_KEY=your_magiceden_key
+   
+   # Burner Wallet
+   BURNER_WALLET_PRIVATE_KEY=[array]
+   BURNER_WALLET_ADDRESS=...
+   
+   # Jito (Optional but Recommended)
+   USE_JITO=true
+   PRIORITY_FEE_LAMPORTS=500000
    ```
 
 ### 3. Build & Run
@@ -82,46 +87,45 @@ The server will start on port `3000`.
 ### 4. Setup Helius Webhook
 Since this bot relies on push notifications from the blockchain, you must connect it to Helius:
 
-1.  Start an ngrok tunnel: `ngrok http 3000`
-2.  Copy your public HTTPS URL (e.g., `https://abcd-123.ngrok.io`).
-3.  Go to the [Helius Developer Portal](https://dev.helius.xyz/webhooks).
-4.  Create a new Webhook:
+1.  Start an ngrok tunnel (if local): `ngrok http 3000`
+2.  Go to the [Helius Developer Portal](https://dev.helius.xyz/webhooks).
+3.  Create a new Webhook:
     - **Network**: Mainnet
-    - **Webhook URL**: `https://abcd-123.ngrok.io/webhook`
-    - **Transaction Types**: Select `NFT_LISTING`, `TRANSFER` (if needed for other events), and ensure to handle raw transactions for the Custom Parser.
-    - **Account Addresses**: Add the collection addresses (Candy Machine IDs or Update Authorities) you want to watch.
+    - **Webhook URL**: `https://your-ngrok-url.ngrok.io/webhook`
+    - **Transaction Types**: Select `NFT_LISTING` and `TRANSFER`.
+    - **Account Addresses**: Add the collection addresses (Update Authorities or Candy Machine IDs).
+    - **Note**: Ensure you enable "Raw Transactions" or "Instructions" if available, to support the custom parser.
 
-### 5. Start Sniping
-1.  Open `http://localhost:3000`.
-2.  Click **+ Add Collection** in the sidebar.
-3.  Add a collection by symbol (must match a loaded metadata file).
-4.  Set your **Max Price** and **Min Rarity**.
-5.  Watch the **Live Feed** for instant alerts!
+## 🔮 Strategic Move: Low Latency VPS
+**Critical for Success:** 
+Running this locally with Ngrok adds **4-8 seconds** of latency due to the tunnel round-trip. In the sniping game, this is too slow.
+
+**Recommendation:**
+Deploy this application to a high-performance Cloud VPS (Virtual Private Server) to achieve sub-second reaction times.
+- **Provider**: Vultr, DigitalOcean, or AWS (US-East Region recommended for proximity to Solana RPCs).
+- **Benefit**: Removes the Ngrok bottleneck, reducing latency from ~6000ms to <200ms.
 
 ## ⚙️ Configuration
 
 Targets are managed via the UI, but persisted in `config.json`.
-Wallet and Telegram settings are managed in `.env`.
+Wallet settings are managed in `.env`.
 
 ## 🔌 API Endpoints
 
-- `GET /api/config`: Current state of targets and collections.
+- `GET /api/config`: Current state of targets.
 - `POST /api/target`: Add a new collection to watch.
 - `DELETE /api/target/:symbol`: Stop watching a collection.
 - `GET /api/history/:symbol`: Get floor price history chart data.
 - `GET /api/listings-stream`: SSE endpoint for frontend updates.
+- `POST /api/buy`: Trigger manual buy.
 - `POST /api/feed/clear`: Clear the current listings feed.
-- `GET /api/stats`: System health stats (clients, cache size).
+- `GET /api/stats`: System health stats.
 
 ## 🐛 Troubleshooting
 
 **"I'm not getting listing alerts"**
 - Check your **ngrok** tunnel status. If the URL changed, update the Helius Webhook.
 - Ensure the collection address in Helius matches the NFTs you are watching.
-
-**"Telegram alerts not working?"**
-- Verify `TELEGRAM_TOKEN` and `CHAT_ID` in `.env`.
-- Ensure the bot has been started in your Telegram chat.
 
 **"Unknown Event" logs?**
 - The bot includes a custom decoder for Magic Eden V2 listings. If you see `Found UNKNOWN listing: ...`, the custom parser successfully extracted the price from a raw transaction!

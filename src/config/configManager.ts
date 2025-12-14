@@ -15,19 +15,24 @@ export class ConfigManager {
     try {
       if (fs.existsSync(CONFIG_PATH)) {
         const data = fs.readFileSync(CONFIG_PATH, 'utf-8');
+        if (!data || data.trim().length === 0) return { targets: [] };
         return JSON.parse(data);
       }
     } catch (error) {
-      console.error('Error loading config:', error);
+      console.error('Config file corrupted or invalid, resetting to defaults.');
+      // Auto-repair
+      try {
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify({ targets: [] }, null, 2));
+      } catch (e) { }
     }
 
     // Return default config
     return { targets: [] };
   }
 
-  public saveConfig(): void {
+  public async saveConfig(): Promise<void> {
     try {
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
+      await fs.promises.writeFile(CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
       console.log('Config saved successfully');
     } catch (error) {
       console.error('Error saving config:', error);
@@ -42,7 +47,7 @@ export class ConfigManager {
     return this.config.targets || [];
   }
 
-  public addTarget(target: TargetCollection): void {
+  public async addTarget(target: TargetCollection): Promise<void> {
     if (!this.config.targets) {
       this.config.targets = [];
     }
@@ -50,12 +55,12 @@ export class ConfigManager {
     // Remove existing target for same symbol if exists (update)
     this.config.targets = this.config.targets.filter(t => t.symbol !== target.symbol);
     this.config.targets.push(target);
-    this.saveConfig();
+    await this.saveConfig();
   }
 
-  public removeTarget(symbol: string): void {
+  public async removeTarget(symbol: string): Promise<void> {
     if (!this.config.targets) return;
     this.config.targets = this.config.targets.filter(t => t.symbol !== symbol);
-    this.saveConfig();
+    await this.saveConfig();
   }
 }

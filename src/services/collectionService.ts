@@ -32,6 +32,9 @@ export class CollectionService {
 
     constructor() {
         this.dataDir = path.join(__dirname, '../../data');
+        if (!fs.existsSync(this.dataDir)) {
+            fs.mkdirSync(this.dataDir, { recursive: true });
+        }
         this.loadCollections();
         this.startAutoSave();
     }
@@ -55,7 +58,11 @@ export class CollectionService {
             const collectionsPath = path.join(this.dataDir, 'collections.json');
             if (fs.existsSync(collectionsPath)) {
                 const data = fs.readFileSync(collectionsPath, 'utf-8');
-                this.collections = JSON.parse(data);
+                if (!data || data.trim().length === 0) {
+                    this.collections = [];
+                } else {
+                    this.collections = JSON.parse(data);
+                }
                 console.log(`[CollectionService] Loaded ${this.collections.length} collections.`);
 
                 // Load individual databases
@@ -66,7 +73,12 @@ export class CollectionService {
                 console.warn('[CollectionService] collections.json not found.');
             }
         } catch (error) {
-            console.error('[CollectionService] Error loading collections:', error);
+            console.error('[CollectionService] Error loading collections, resetting db:', error);
+            this.collections = [];
+            try {
+                const collectionsPath = path.join(this.dataDir, 'collections.json');
+                fs.writeFileSync(collectionsPath, '[]');
+            } catch (e) { }
         }
     }
 
