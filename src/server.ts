@@ -460,6 +460,16 @@ app.post('/webhook', (req, res) => {
                     seller = ix.accounts[0]; // First account in Sell instruction is usually seller/signer
                   }
 
+                  // Fallback: If seller not found in instruction, use fee payer (usually logic is: seller pays fee to list/update)
+                  if (!seller && event.feePayer) {
+                    seller = event.feePayer;
+                  }
+
+                  // Extra Fallback: Check accountKeys for signer if available in legacy
+                  if (!seller && accountKeys.length > 0) {
+                    seller = accountKeys[0];
+                  }
+
                   /*/ LOGGING MATCH ATTEMPTS
                   console.log(`[RawParser] Listing Confirmed for ${price} SOL. Checking match against ${targets.length} targets...`);*/
 
