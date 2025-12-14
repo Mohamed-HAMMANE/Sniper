@@ -460,6 +460,9 @@ app.post('/webhook', (req, res) => {
                     seller = ix.accounts[0]; // First account in Sell instruction is usually seller/signer
                   }
 
+                  // LOGGING MATCH ATTEMPTS
+                  console.log(`[RawParser] Listing Confirmed for ${price} SOL. Checking match against ${targets.length} targets...`);
+
                   // Expiry
                   const expiryHex = hexData.substring(32, 48);
                   if (expiryHex.length === 16) {
@@ -480,7 +483,12 @@ app.post('/webhook', (req, res) => {
           for (const potentialMint of accountKeys) {
             for (const target of targets) {
               const itemMeta = collectionService.getItem(target.symbol, potentialMint);
+
+              // Verbose log for potential matches
+              // console.log(`[RawParser] Checking ${potentialMint} against ${target.symbol} -> ${!!itemMeta}`); 
+
               if (itemMeta) {
+                console.log(`[RawParser] MATCH FOUND! ${itemMeta.name} is in ${target.symbol}`);
                 // Found a watched item in this transaction
                 if (price > target.priceMax) continue;
 
