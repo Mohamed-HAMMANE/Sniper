@@ -444,6 +444,10 @@ app.post('/webhook', (req, res) => {
             try {
               const decodedData = decodeBase58(ix.data);
               const hexData = Buffer.from(decodedData).toString('hex');
+
+              console.log(`[RawParser] Found ME Instruction! Data: ${ix.data}`);
+              console.log(`[RawParser] Hex: ${hexData}`);
+
               if (hexData.startsWith(SELL_DISCRIMINATOR)) {
                 const priceHex = hexData.substring(16, 32);
                 if (priceHex.length === 16) {
