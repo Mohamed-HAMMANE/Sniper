@@ -32,6 +32,9 @@ export class CollectionService {
 
     constructor() {
         this.dataDir = path.join(__dirname, '../../data');
+        if (!fs.existsSync(this.dataDir)) {
+            fs.mkdirSync(this.dataDir, { recursive: true });
+        }
         this.loadCollections();
         this.startAutoSave();
     }

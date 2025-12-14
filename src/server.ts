@@ -274,11 +274,11 @@ app.post('/webhook', (req, res) => {
         console.log(`[Processing] Logic took ${procTime}ms`);*/
       } else if (event.type === 'UNKNOWN' && event.accountData) {
 
-        // Latency Check for UNKNOWN events
+        /*/ Latency Check for UNKNOWN events
         if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
           console.log(`[Latency] (UNKNOWN) ${latency}ms delay from Chain to Localhost`);
-        }
+        }*/
 
         /*/ Internal Processing Check
         const start = process.hrtime();*/
