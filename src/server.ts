@@ -168,11 +168,11 @@ app.post('/webhook', (req, res) => {
 
         if (priceSol <= 0) continue;
 
-        /*// Latency Check
+        // Latency Check
         if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
-          console.log(`[Latency] ${latency}ms delay from Chain to Localhost`);
-        }*/
+          console.log(`[Latency] ${latency}ms delay from Chain to Localhost (Type: ${event.type})`);
+        }
 
         /*/ Internal Processing Check
         const start = process.hrtime();*/
@@ -274,11 +274,11 @@ app.post('/webhook', (req, res) => {
         console.log(`[Processing] Logic took ${procTime}ms`);*/
       } else if (event.type === 'UNKNOWN' && event.accountData) {
 
-        /*/ Latency Check for UNKNOWN events
+        // Latency Check for UNKNOWN events
         if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
           console.log(`[Latency] (UNKNOWN) ${latency}ms delay from Chain to Localhost`);
-        }*/
+        }
 
         /*/ Internal Processing Check
         const start = process.hrtime();*/
@@ -428,6 +428,7 @@ setInterval(async () => {
 // Start Server
 app.listen(PORT, () => {
   console.log(`NFT Sniper running on port ${PORT}`);
+  console.log(`[Server] Time: ${new Date().toISOString()}`);
   console.log('[Server] M2 Support Enabled (fresh build)');
 });
 
