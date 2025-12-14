@@ -423,6 +423,8 @@ app.post('/webhook', (req, res) => {
             return { programId, data, accounts };
           });
 
+          console.log('[RawParser] Programs:', instructions.map(ix => ix.programId));
+
         } catch (e) {
           console.error('[RawParser] Warning: Could not parse raw tx structure', e);
           continue;
