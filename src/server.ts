@@ -429,7 +429,7 @@ app.post('/webhook', (req, res) => {
 
         // Reuse parsing logic
         const ME_V2_PROGRAM_ID = 'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K';
-        const SELL_DISCRIMINATOR = '1ff3f73b8653a5da';
+        //const SELL_DISCRIMINATOR = '1ff3f73b8653a5da';
 
         let price = 0;
         let isMagicEdenListing = false;
