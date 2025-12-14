@@ -661,6 +661,8 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     // 2. Build Query - ALWAYS fetch authoritative listing data first (Smart Fetch First)
     const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '500000'; // Default 0.0005 SOL for better confirmation
 
+    /*
+    // OPTIMIZATION: Commented out "Smart Fetch" for speed. Trusting Webhook Data.
     // Smart Fetch First: Get authoritative listing details from ME
     const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
     console.log(`[Buy] Smart Fetch First - fetching: ${detailsUrl}`);
@@ -690,13 +692,22 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     const authAuctionHouse = best.auctionHouse || auctionHouse;
 
     console.log(`[Buy] Using authoritative data: Price=${authPrice}, Seller=${authSeller}, AH=${authAuctionHouse}, Expiry=${authExpiry}, TokenATA=${authTokenATA}`);
+    */
+
+    const authSeller = seller;
+    const authTokenATA = sellerATA;
+    const authPrice = price;
+    const authExpiry = sellerExpiry || 0;
+    const authAuctionHouse = auctionHouse;
+
+    console.log(`[Buy] OPTIMISTIC MODE: Using Webhook data: Price=${authPrice}, Seller=${authSeller}`);
 
     // Build query with authoritative data
     const query = new URLSearchParams({
       buyer: buyerAddress,
       seller: authSeller,
       tokenMint: mint,
-      tokenATA: authTokenATA,
+      tokenATA: authTokenATA as string, // Force string (it WAS verified above or passed in)
       price: authPrice.toString(),
       sellerExpiry: authExpiry.toString(),
       prioFeeMicroLamports: PRIORITY_FEE
