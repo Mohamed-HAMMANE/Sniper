@@ -314,6 +314,9 @@ document.getElementById('chart-modal').addEventListener('click', (e) => {
 });
 
 // ==================== ACTIVE TARGETS ====================
+// Track collapsed state per collection
+const collapsedCards = new Set();
+
 function renderActiveTargets() {
   activeTargetsList.innerHTML = '';
 
@@ -327,66 +330,115 @@ function renderActiveTargets() {
     const name = col ? col.name : target.symbol;
     const image = col?.image || '';
     const fp = col?.floorPrice;
-    const rarityShort = (target.minRarity || 'COMMON').substring(0, 3);
-    const rarityClass = (target.minRarity || 'common').toLowerCase();
+    const supply = col?.supply || 0;
+    const isCollapsed = collapsedCards.has(target.symbol);
 
-    const tag = document.createElement('div');
-    tag.className = 'target-card';
-    tag.dataset.symbol = target.symbol;
+    const card = document.createElement('div');
+    card.className = `target-card ${isCollapsed ? 'collapsed' : ''}`;
+    card.dataset.symbol = target.symbol;
 
-    tag.innerHTML = `
-      <div class="target-card-header">
-        ${image
-        ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="openChart('${target.symbol}')">`
-        : `<div class="target-thumb-placeholder" onclick="openChart('${target.symbol}')">🎯</div>`
-      }
-        <div class="target-title-group">
-          <span class="target-name" onclick="openChart('${target.symbol}')">${name}</span>
-          <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
-        </div>
-        <div class="target-header-actions">
-          <label class="auto-toggle ${target.autoBuy ? 'active' : ''}" title="Auto Buy">
-            <input type="checkbox" ${target.autoBuy ? 'checked' : ''} onchange="updateTarget('${target.symbol}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-          <button class="btn-remove" onclick="removeTarget('${target.symbol}')" title="Remove">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    // Build filter rows - now with VERTICAL layout
+    const filtersHtml = (target.filters || []).map((filter, idx) => {
+      const rarityClass = (filter.minRarity || 'common').toLowerCase();
+      const traitCount = filter.traitFilters ? Object.keys(filter.traitFilters).length : 0;
+      return `
+        <div class="filter-block" data-filter-id="${filter.id}">
+          <div class="filter-header">
+            <span class="filter-index">Filter ${idx + 1}</span>
+            <label class="auto-toggle ${filter.autoBuy ? 'active' : ''}" title="Auto Buy">
+              <input type="checkbox" ${filter.autoBuy ? 'checked' : ''} 
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          
+          <!-- Vertical layout: one field per row -->
+          <div class="filter-row">
+            <span class="filter-row-label">MAX PRICE</span>
+            <div class="filter-row-input">
+              <input type="number" class="control-input" value="${filter.priceMax}" step="0.1" 
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'priceMax', this.value)">
+              <span class="input-suffix-inline">◎</span>
+            </div>
+          </div>
+
+          
+          <div class="filter-row">
+            <span class="filter-row-label">MIN RARITY</span>
+            <div class="filter-row-input rarity-indicator ${rarityClass}">
+              <select class="rarity-dropdown" 
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'minRarity', this.value); this.parentElement.className='filter-row-input rarity-indicator '+this.value.toLowerCase();">
+                ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
+        `<option value="${r}" ${filter.minRarity === r ? 'selected' : ''}>${r}</option>`
+      ).join('')}
+              </select>
+            </div>
+          </div>
+          
+          <div class="filter-row">
+            <span class="filter-row-label">RARITY TYPE</span>
+            <div class="filter-row-input">
+              <select class="type-dropdown" 
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'rarityType', this.value)">
+                <option value="statistical" ${filter.rarityType === 'statistical' ? 'selected' : ''}>Statistical</option>
+                <option value="additive" ${filter.rarityType === 'additive' ? 'selected' : ''}>Additive</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="filter-row">
+            <span class="filter-row-label">ATTRIBUTES</span>
+            <button class="btn-attrs ${traitCount > 0 ? 'has-selection' : ''}" 
+              onclick="openTraitFiltersForFilter('${target.symbol}', '${filter.id}')">
+              ${traitCount > 0 ? traitCount + ' selected' : '0 selected'}
+            </button>
+          </div>
+          
+          <button class="btn-delete-filter" onclick="deleteFilter('${target.symbol}', '${filter.id}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
+            DELETE FILTER
           </button>
         </div>
+      `;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="target-card-header" onclick="toggleCardCollapse('${target.symbol}')">
+        ${image
+        ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openChart('${target.symbol}')">`
+        : `<div class="target-thumb-placeholder" onclick="event.stopPropagation(); openChart('${target.symbol}')">🎯</div>`
+      }
+        <div class="target-title-group">
+          <span class="target-name" onclick="event.stopPropagation(); openChart('${target.symbol}')">${name}</span>
+          <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
+        </div>
+        <button class="btn-collapse" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="${isCollapsed ? 'M6 9l6 6 6-6' : 'M18 15l-6-6-6 6'}"/>
+          </svg>
+        </button>
       </div>
-      <div class="target-card-controls">
-        <div class="control-group">
-          <span class="control-label">Max</span>
-          <input type="number" class="control-input" value="${target.priceMax}" step="0.1" onchange="updateTarget('${target.symbol}', 'priceMax', this.value)">
-        </div>
-        <div class="control-group">
-          <span class="control-label">Min</span>
-          <div class="rarity-indicator ${rarityClass}">
-            <select class="rarity-dropdown" onchange="updateTarget('${target.symbol}', 'minRarity', this.value); this.parentElement.className='rarity-indicator '+this.value.toLowerCase();">
-              ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
-        `<option value="${r}" ${target.minRarity === r ? 'selected' : ''}>${r.substring(0, 3)}</option>`
-      ).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="control-group">
-          <span class="control-label">Type</span>
-          <select class="type-dropdown" onchange="updateTarget('${target.symbol}', 'rarityType', this.value)">
-            <option value="statistical" ${target.rarityType === 'statistical' ? 'selected' : ''}>Stat</option>
-            <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>Add</option>
-          </select>
-        </div>
-        <div class="control-group">
-            <span class="control-label">Traits</span>
-            <button class="btn-icon" style="width:100%; height:26px; border:1px solid var(--border); border-radius:4px; font-size:10px;" onclick="openTraitFilters('${target.symbol}')">
-                ${target.traitFilters ? Object.keys(target.traitFilters).length + ' Active' : 'Filter'}
-            </button>
-        </div>
+      <div class="filters-container ${isCollapsed ? 'hidden' : ''}">
+        ${filtersHtml}
+        <button class="btn-add-filter" onclick="addFilter('${target.symbol}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          Add filter
+        </button>
       </div>
     `;
-    activeTargetsList.appendChild(tag);
+    activeTargetsList.appendChild(card);
   });
 }
+
+// Toggle card collapse state
+window.toggleCardCollapse = function (symbol) {
+  if (collapsedCards.has(symbol)) {
+    collapsedCards.delete(symbol);
+  } else {
+    collapsedCards.add(symbol);
+  }
+  renderActiveTargets();
+};
 
 
 // ==================== TARGET ACTIONS ====================
@@ -416,18 +468,43 @@ async function addTarget(symbol) {
   }
 }
 
-window.updateTarget = async function (symbol, field, value) {
+// Add a new filter to existing collection
+window.addFilter = async function (symbol) {
+  try {
+    const res = await fetch(`/api/target/${symbol}/filter`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ priceMax: 1000, minRarity: 'COMMON', rarityType: 'statistical', autoBuy: false })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
+      showToast('Filter added', 'success');
+    }
+  } catch (e) {
+    showToast('Error adding filter', 'error');
+  }
+};
+
+// Update a specific filter
+window.updateFilter = async function (symbol, filterId, field, value) {
   const target = activeTargets.find(t => t.symbol === symbol);
   if (!target) return;
 
-  if (field === 'priceMax') target.priceMax = parseFloat(value);
-  else target[field] = value;
+  const filter = target.filters?.find(f => f.id === filterId);
+  if (!filter) return;
+
+  // Update local state
+  if (field === 'priceMax') filter.priceMax = parseFloat(value) || 1000;
+  else if (field === 'maxRank') filter.maxRank = value ? parseInt(value) : undefined;
+  else filter[field] = value;
 
   try {
-    const res = await fetch('/api/target', {
-      method: 'POST',
+    const res = await fetch(`/api/target/${symbol}/filter/${filterId}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(target)
+      body: JSON.stringify({ [field]: field === 'priceMax' ? parseFloat(value) : (field === 'maxRank' ? (value ? parseInt(value) : null) : value) })
     });
     if (res.ok) showToast('Saved', 'success');
   } catch (e) {
@@ -435,8 +512,43 @@ window.updateTarget = async function (symbol, field, value) {
   }
 };
 
+// Delete a specific filter
+window.deleteFilter = async function (symbol, filterId) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  const filterCount = target?.filters?.length || 0;
+
+  const message = filterCount === 1
+    ? 'This is the last filter. Deleting it will remove the entire collection from watching. Continue?'
+    : 'Delete this filter?';
+
+  if (!confirm(message)) return;
+
+  try {
+    const res = await fetch(`/api/target/${symbol}/filter/${filterId}`, { method: 'DELETE' });
+    if (res.ok) {
+      const data = await res.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
+      updateWatchCount();
+      showToast(data.collectionRemoved ? 'Collection removed' : 'Filter deleted', 'success');
+    }
+  } catch (e) {
+    showToast('Error', 'error');
+  }
+};
+
+// Legacy update target (for backward compatibility during migration)
+window.updateTarget = async function (symbol, field, value) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  if (!target || !target.filters || target.filters.length === 0) return;
+
+  // Update first filter for legacy compatibility
+  const filterId = target.filters[0].id;
+  await updateFilter(symbol, filterId, field, value);
+};
+
 window.removeTarget = async function (symbol) {
-  if (!confirm('Stop watching?')) return;
+  if (!confirm('Remove this collection from watching?')) return;
   try {
     const res = await fetch(`/api/target/${symbol}`, { method: 'DELETE' });
     if (res.ok) {
@@ -743,13 +855,16 @@ function handleSetupError(data) {
 
 // ==================== TRAIT FILTERS ====================
 let currentTraitSymbol = null;
+let currentTraitFilterId = null; // NEW: Track which filter we're editing
 let currentTraits = {}; // Raw trait data from API { Type: { Value: Count } }
 let activeFilters = {}; // Current work-in-progress filters
 let currentCategory = null; // Currently selected category
 let totalItems = 0; // Total items in collection for percentage calculation
 
-window.openTraitFilters = async function (symbol) {
+// Open trait filters for a specific filter
+window.openTraitFiltersForFilter = async function (symbol, filterId) {
   currentTraitSymbol = symbol;
+  currentTraitFilterId = filterId;
   const modal = document.getElementById('trait-modal');
 
   // Reset state
@@ -758,9 +873,10 @@ window.openTraitFilters = async function (symbol) {
   document.getElementById('trait-options').innerHTML = '';
   document.getElementById('trait-search').value = '';
 
-  // Get current active filters from target
+  // Get current active filters from the specific filter
   const target = activeTargets.find(t => t.symbol === symbol);
-  activeFilters = target.traitFilters ? JSON.parse(JSON.stringify(target.traitFilters)) : {};
+  const filter = target?.filters?.find(f => f.id === filterId);
+  activeFilters = filter?.traitFilters ? JSON.parse(JSON.stringify(filter.traitFilters)) : {};
 
   try {
     const res = await fetch(`/api/traits/${symbol}`);
@@ -781,6 +897,14 @@ window.openTraitFilters = async function (symbol) {
   } catch (e) {
     console.error(e);
     document.getElementById('trait-sidebar').innerHTML = '<div style="padding:16px;color:var(--danger);">Error loading traits</div>';
+  }
+}
+
+// Legacy: open trait filters for first filter (backward compatibility)
+window.openTraitFilters = async function (symbol) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  if (target?.filters?.length > 0) {
+    await openTraitFiltersForFilter(symbol, target.filters[0].id);
   }
 }
 
@@ -925,7 +1049,16 @@ function updateTraitSummary() {
 window.saveTraitFilters = async function () {
   if (!currentTraitSymbol) return;
 
-  await updateTarget(currentTraitSymbol, 'traitFilters', Object.keys(activeFilters).length > 0 ? activeFilters : null);
+  const traitFilters = Object.keys(activeFilters).length > 0 ? activeFilters : null;
+
+  // Save to specific filter if we have a filter ID
+  if (currentTraitFilterId) {
+    await updateFilter(currentTraitSymbol, currentTraitFilterId, 'traitFilters', traitFilters);
+  } else {
+    // Legacy fallback
+    await updateTarget(currentTraitSymbol, 'traitFilters', traitFilters);
+  }
+
   closeTraitFilters();
   renderActiveTargets();
 }
@@ -933,6 +1066,7 @@ window.saveTraitFilters = async function () {
 window.closeTraitFilters = function () {
   document.getElementById('trait-modal').classList.add('hidden');
   currentTraitSymbol = null;
+  currentTraitFilterId = null;
   currentTraits = {};
   activeFilters = {};
   currentCategory = null;

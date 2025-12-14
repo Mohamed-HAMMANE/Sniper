@@ -1,10 +1,17 @@
+// Individual filter rule within a collection
+export interface FilterRule {
+  id: string;                               // UUID for tracking/deletion
+  priceMax: number;
+  maxRank?: number;                         // Rank-based filter (e.g., 500 = top 500)
+  minRarity?: string;                       // Tier-based fallback ('COMMON' to 'MYTHIC')
+  rarityType?: 'additive' | 'statistical';
+  traitFilters?: Record<string, string[]>;  // e.g. { "Background": ["Red", "Blue"] }
+  autoBuy: boolean;
+}
+
 export interface TargetCollection {
   symbol: string;
-  priceMax: number;
-  minRarity?: string; // 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'
-  rarityType?: 'additive' | 'statistical';
-  autoBuy?: boolean;
-  traitFilters?: Record<string, string[]>; // e.g. { "Background": ["Red", "Blue"] }
+  filters: FilterRule[];
 }
 
 export interface CollectionMetadata {

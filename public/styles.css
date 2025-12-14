@@ -1922,3 +1922,364 @@ select.control-input-lg {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
 }
+
+/* ==================== MULTI-FILTER STYLES ==================== */
+
+/* Filters Container */
+.filters-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Individual Filter Block */
+.filter-block {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-block:hover {
+  border-color: rgba(139, 92, 246, 0.3);
+}
+
+/* Filter Header */
+.filter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-index {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Filter Controls Row */
+.filter-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-controls .control-group {
+  flex: 1;
+}
+
+/* Input with Suffix (SOL symbol) */
+.input-with-suffix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-suffix input {
+  padding-right: 24px;
+}
+
+.input-suffix {
+  position: absolute;
+  right: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* Input with Badge (Rarity indicator) */
+.input-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0 4px 0 0;
+  transition: border-color var(--transition-fast);
+}
+
+.input-with-badge:focus-within {
+  border-color: var(--accent);
+}
+
+.input-with-badge input {
+  border: none;
+  background: transparent;
+  padding: 4px 6px;
+  width: 100%;
+}
+
+.input-with-badge input:focus {
+  outline: none;
+}
+
+.rarity-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: var(--radius-xs);
+  color: white;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.rarity-badge.common {
+  background: #64748b;
+}
+
+.rarity-badge.uncommon {
+  background: #10b981;
+}
+
+.rarity-badge.rare {
+  background: #3b82f6;
+}
+
+.rarity-badge.epic {
+  background: #8b5cf6;
+}
+
+.rarity-badge.legendary {
+  background: #f59e0b;
+}
+
+.rarity-badge.mythic {
+  background: #ef4444;
+}
+
+/* Attributes Button */
+.btn-attrs {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 4px 8px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.btn-attrs:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.btn-attrs.has-selection {
+  background: var(--accent-dim);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: var(--accent-light);
+}
+
+/* Delete Filter Button */
+.btn-delete-filter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-transform: uppercase;
+}
+
+.btn-delete-filter:hover {
+  background: var(--danger-dim);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Add Filter Button */
+.btn-add-filter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 10px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: 4px;
+}
+
+.btn-add-filter:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
+
+.btn-add-filter svg {
+  opacity: 0.7;
+}
+
+.btn-add-filter:hover svg {
+  opacity: 1;
+}
+
+/* Vertical Filter Rows */
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.filter-row-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.filter-row-input {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+
+.filter-row-input .control-input {
+  flex: 1;
+}
+
+/* Inline suffix for inputs */
+.input-suffix-inline {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+/* Inline rarity badge */
+.rarity-badge-inline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: var(--radius-xs);
+  color: white;
+  flex-shrink: 0;
+}
+
+.rarity-badge-inline.common {
+  background: #64748b;
+}
+
+.rarity-badge-inline.uncommon {
+  background: #10b981;
+}
+
+.rarity-badge-inline.rare {
+  background: #3b82f6;
+}
+
+.rarity-badge-inline.epic {
+  background: #8b5cf6;
+}
+
+.rarity-badge-inline.legendary {
+  background: #f59e0b;
+}
+
+.rarity-badge-inline.mythic {
+  background: #ef4444;
+}
+
+/* Collapse Button */
+.btn-collapse {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.btn-collapse:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Collapsed card state */
+.target-card.collapsed .target-card-header {
+  cursor: pointer;
+}
+
+/* Make header clickable for collapse */
+.target-card-header {
+  cursor: pointer;
+}
+
+/* Filters container hidden state */
+.filters-container.hidden {
+  display: none;
+}
+
+/* Filters container styling */
+.filters-container {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+/* Rarity dropdowns fullwidth */
+.filter-row-input .rarity-dropdown,
+.filter-row-input .type-dropdown {
+  flex: 1;
+}
+
+/* Filter block gap adjustment */
+.filter-block {
+  gap: 6px;
+}
+
+/* Filter header border */
+.filter-header {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+/* Delete filter margin */
+.btn-delete-filter {
+  margin-top: 4px;
+}
+
+/* Btn attrs flex */
+.btn-attrs {
+  flex: 1;
+}

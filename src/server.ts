@@ -73,25 +73,94 @@ app.post('/api/balance/refresh', async (req, res) => {
   res.json({ success: true, balance: balanceMonitor.getBalance() });
 });
 
-// Add target collection
+// Add target collection (with first filter)
 app.post('/api/target', async (req, res) => {
-  const { symbol, priceMax, minRarity } = req.body;
+  const { symbol, priceMax, minRarity, maxRank, rarityType, autoBuy, traitFilters, filters } = req.body;
 
-  if (!symbol || priceMax === undefined) {
-    return res.status(400).json({ error: 'Missing required fields: symbol, priceMax' });
+  // Support both old format (single filter params) and new format (filters array)
+  if (filters && Array.isArray(filters)) {
+    // New format: full target with filters array
+    const target: TargetCollection = { symbol, filters };
+    await configManager.addTarget(target);
+    res.json({ success: true, targets: configManager.getTargets() });
+    return;
+  }
+
+  // Old format: single filter params - convert to new format
+  if (!symbol) {
+    return res.status(400).json({ error: 'Missing required field: symbol' });
   }
 
   const target: TargetCollection = {
     symbol: symbol,
-    priceMax: Number(priceMax),
-    minRarity: minRarity,
-    rarityType: req.body.rarityType || 'statistical',
-    autoBuy: req.body.autoBuy === true,
-    traitFilters: req.body.traitFilters
+    filters: [{
+      id: 'f_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
+      priceMax: Number(priceMax) || 1000,
+      maxRank: maxRank ? Number(maxRank) : undefined,
+      minRarity: minRarity || 'COMMON',
+      rarityType: rarityType || 'statistical',
+      traitFilters: traitFilters,
+      autoBuy: autoBuy === true
+    }]
   };
 
   await configManager.addTarget(target);
   res.json({ success: true, targets: configManager.getTargets() });
+});
+
+// Add filter to existing collection
+app.post('/api/target/:symbol/filter', async (req, res) => {
+  const { symbol } = req.params;
+  const { priceMax, maxRank, minRarity, rarityType, autoBuy, traitFilters } = req.body;
+
+  const filter = await configManager.addFilter(symbol, {
+    priceMax: Number(priceMax) || 1000,
+    maxRank: maxRank ? Number(maxRank) : undefined,
+    minRarity: minRarity || 'COMMON',
+    rarityType: rarityType || 'statistical',
+    traitFilters,
+    autoBuy: autoBuy === true
+  });
+
+  if (!filter) {
+    return res.status(404).json({ error: 'Collection not found' });
+  }
+
+  res.json({ success: true, filter, targets: configManager.getTargets() });
+});
+
+// Update specific filter
+app.put('/api/target/:symbol/filter/:filterId', async (req, res) => {
+  const { symbol, filterId } = req.params;
+  const updates = req.body;
+
+  // Convert numeric fields
+  if (updates.priceMax !== undefined) updates.priceMax = Number(updates.priceMax);
+  if (updates.maxRank !== undefined) updates.maxRank = updates.maxRank ? Number(updates.maxRank) : undefined;
+
+  const success = await configManager.updateFilter(symbol, filterId, updates);
+
+  if (!success) {
+    return res.status(404).json({ error: 'Filter not found' });
+  }
+
+  res.json({ success: true, targets: configManager.getTargets() });
+});
+
+// Remove specific filter
+app.delete('/api/target/:symbol/filter/:filterId', async (req, res) => {
+  const { symbol, filterId } = req.params;
+  const result = await configManager.removeFilter(symbol, filterId);
+
+  if (!result.removed) {
+    return res.status(404).json({ error: 'Filter not found' });
+  }
+
+  res.json({
+    success: true,
+    collectionRemoved: result.collectionRemoved,
+    targets: configManager.getTargets()
+  });
 });
 
 // Clear feed history
@@ -100,7 +169,7 @@ app.post('/api/feed/clear', (req, res) => {
   res.json({ success: true, message: 'Feed history cleared' });
 });
 
-// Remove target
+// Remove entire target collection
 app.delete('/api/target/:symbol', async (req, res) => {
   const { symbol } = req.params;
   await configManager.removeTarget(symbol);
@@ -211,95 +280,110 @@ app.post('/webhook', (req, res) => {
           }
         }
 
-        // Check against active targets
+        // Check against active targets (now with nested filters)
         for (const target of targets) {
           const itemMeta = collectionService.getItem(target.symbol, mint);
 
           if (!itemMeta) continue;
 
-          // Price Check
-          if (priceSol > target.priceMax) continue;
+          // Get item rarity info once (needed for filter checks)
+          const itemRankStat = itemMeta.rank_statistical || itemMeta.rank || 0;
+          const itemRankAdd = itemMeta.rank_additive || itemMeta.rank || 0;
+          const itemTierStat = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+          const itemTierAdd = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
 
-          // Rarity Check
-          const rarityType = target.rarityType || 'statistical';
-          let itemTier = '';
-          let itemRank = 0;
+          let matchesAnyFilter = false;
+          let shouldAutoBuy = false;
 
-          if (rarityType === 'additive') {
-            itemTier = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
-            itemRank = itemMeta.rank_additive || itemMeta.rank || 0;
-          } else {
-            itemTier = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
-            itemRank = itemMeta.rank_statistical || itemMeta.rank || 0;
-          }
+          // We'll use these for the listing object, prioritizing the first match's preference or defaulting to statistical
+          let itemRankMax = itemRankStat;
+          let itemTierMax = itemTierStat;
 
-          if (target.minRarity && itemTier) {
-            const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
-            const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
-            if (itemRarityVal < targetRarityVal) continue;
-          }
+          // Check each filter
+          for (const filter of target.filters) {
+            // Price Check
+            if (priceSol > filter.priceMax) continue;
 
-          // Trait Filtering
-          if (target.traitFilters) {
-            let matchesTraits = true;
-            for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
-              // Normalize Keys: standard is Title Case usually, but we stored as lowercase in setupManager? 
-              // Wait, setupManager stored keys as lowercased: String(a.trait_type).trim().toLowerCase()
-              // So we should compare against lowercased keys.
-              const traitKey = traitType.toLowerCase();
-              const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+            // Rarity Check
+            const rarityType = filter.rarityType || 'statistical';
+            let itemTier = rarityType === 'additive' ? itemTierAdd : itemTierStat;
+            let itemRank = rarityType === 'additive' ? itemRankAdd : itemRankStat;
 
-              if (!itemValue) {
-                matchesTraits = false;
-                break;
-              }
+            // Max Rank Check (if set)
+            if (filter.maxRank && itemRank > filter.maxRank) continue;
 
-              // allow case-insensitive value match? stored as trim().
-              if (!allowedValues.includes(itemValue) && !allowedValues.includes(itemValue.toLowerCase()) && !allowedValues.map(v => v.toLowerCase()).includes(itemValue.toLowerCase())) {
-                // Try strict match first, then loose
-                matchesTraits = false;
-                break;
-              }
+            // Min Rarity Tier Check (if set)
+            if (filter.minRarity && itemTier) {
+              const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+              const targetRarityVal = rarityOrder[filter.minRarity.toUpperCase()] || 0;
+              if (itemRarityVal < targetRarityVal) continue;
             }
-            if (!matchesTraits) continue;
+
+            // Trait Filtering
+            if (filter.traitFilters) {
+              let matchesTraits = true;
+              for (const [traitType, allowedValues] of Object.entries(filter.traitFilters)) {
+                const traitKey = traitType.toLowerCase();
+                const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+                if (!itemValue) {
+                  matchesTraits = false;
+                  break;
+                }
+
+                const allowedArr = allowedValues as string[];
+                if (!allowedArr.includes(itemValue) && !allowedArr.includes(itemValue.toLowerCase()) && !allowedArr.map((v: string) => v.toLowerCase()).includes(itemValue.toLowerCase())) {
+                  matchesTraits = false;
+                  break;
+                }
+              }
+              if (!matchesTraits) continue;
+            }
+
+            // All checks passed - this filter matches!
+            matchesAnyFilter = true;
+
+            // Upgrade to AutoBuy if this specific filter has it enabled
+            if (filter.autoBuy) {
+              shouldAutoBuy = true;
+            }
           }
 
-          const listing: Listing = {
-            source: event.source || 'Unknown',
-            mint: mint,
-            price: priceSol,
-            listingUrl: `https://magiceden.io/item-details/${mint}`,
-            timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
-            seller: seller,
-            name: itemMeta.name,
-            symbol: target.symbol,
-            imageUrl: itemMeta.image,
-            rank: itemRank,
-            rarity: itemTier,
-            rank_additive: itemMeta.rank_additive,
-            tier_additive: itemMeta.tier_additive,
-            score_additive: itemMeta.score_statistical,
-            rank_statistical: itemMeta.rank_statistical,
-            tier_statistical: itemMeta.tier_statistical,
-            score_statistical: itemMeta.score_statistical,
-            auctionHouse: auctionHouse,
-            sellerExpiry: expiry
-          };
+          if (matchesAnyFilter) {
+            const listing: Listing = {
+              source: event.source || 'Unknown',
+              mint: mint,
+              price: priceSol,
+              listingUrl: `https://magiceden.io/item-details/${mint}`,
+              timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+              seller: seller,
+              name: itemMeta.name,
+              symbol: target.symbol,
+              imageUrl: itemMeta.image,
+              rank: itemRankMax, // Default to statistical for display if mixed
+              rarity: itemTierMax,
+              rank_additive: itemMeta.rank_additive,
+              tier_additive: itemMeta.tier_additive,
+              score_additive: itemMeta.score_statistical,
+              rank_statistical: itemMeta.rank_statistical,
+              tier_statistical: itemMeta.tier_statistical,
+              score_statistical: itemMeta.score_statistical,
+              auctionHouse: auctionHouse,
+              sellerExpiry: expiry
+            };
 
-          broadcaster.broadcastListing(listing);
+            broadcaster.broadcastListing(listing);
 
-          // Auto Buy
-          if (target.autoBuy) {
-            console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
-            // Pass seller to executeBuyTransaction
-            executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry)
-              .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
-              .catch(err => {
-                if (err === 'SKIPPED_DUPLICATE') return;
-                console.error(`[AutoBuy] FAILED: ${err.message}`)
-              });
+            if (shouldAutoBuy) {
+              console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
+              executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry)
+                .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                .catch(err => {
+                  if (err === 'SKIPPED_DUPLICATE') return;
+                  console.error(`[AutoBuy] FAILED: ${err.message}`)
+                });
+            }
           }
-          break; // Found in target, break inner loop
         }
 
         /*const end = process.hrtime(start);
@@ -362,77 +446,103 @@ app.post('/webhook', (req, res) => {
             const itemMeta = collectionService.getItem(collectionSymbol, potentialMint);
 
             if (itemMeta) {
-              // Rarity Check (Duplicate logic, simplified)
-              const rarityType = target.rarityType || 'statistical';
-              let itemTier = rarityType === 'additive' ? (itemMeta.tier_additive || 'COMMON') : (itemMeta.tier_statistical || 'COMMON');
-              let itemRank = rarityType === 'additive' ? (itemMeta.rank_additive || 0) : (itemMeta.rank_statistical || 0);
+              // Get item rarity info once
+              const itemRankStat = itemMeta.rank_statistical || itemMeta.rank || 0;
+              const itemRankAdd = itemMeta.rank_additive || itemMeta.rank || 0;
+              const itemTierStat = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+              const itemTierAdd = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
 
-              if (target.minRarity) {
-                const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
-                const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
-                if (itemRarityVal < targetRarityVal) continue;
-              }
+              let matchesAnyFilter = false;
+              let shouldAutoBuy = false;
 
-              // Trait Filtering (Raw Parser)
-              if (target.traitFilters) {
-                let matchesTraits = true;
-                for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
-                  const traitKey = traitType.toLowerCase();
-                  const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+              // We'll use these for the listing object
+              let itemRankMax = itemRankStat;
+              let itemTierMax = itemTierStat;
 
-                  if (!itemValue) {
-                    matchesTraits = false;
-                    break;
-                  }
+              // Check each filter
+              for (const filter of target.filters) {
+                // Rarity Check
+                const rarityType = filter.rarityType || 'statistical';
+                let itemTier = rarityType === 'additive' ? itemTierAdd : itemTierStat;
+                let itemRank = rarityType === 'additive' ? itemRankAdd : itemRankStat;
 
-                  // Loose matching for safety
-                  const itemValLower = itemValue.toLowerCase();
-                  const allowedLower = allowedValues.map(v => v.toLowerCase());
-                  if (!allowedLower.includes(itemValLower)) {
-                    matchesTraits = false;
-                    break;
-                  }
+                // Max Rank Check
+                if (filter.maxRank && itemRank > filter.maxRank) continue;
+
+                // Min Rarity Tier Check
+                if (filter.minRarity) {
+                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+                  const targetRarityVal = rarityOrder[filter.minRarity.toUpperCase()] || 0;
+                  if (itemRarityVal < targetRarityVal) continue;
                 }
-                if (!matchesTraits) continue;
+
+                // Trait Filtering
+                if (filter.traitFilters) {
+                  let matchesTraits = true;
+                  for (const [traitType, allowedValues] of Object.entries(filter.traitFilters)) {
+                    const traitKey = traitType.toLowerCase();
+                    const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+                    if (!itemValue) {
+                      matchesTraits = false;
+                      break;
+                    }
+
+                    const allowedArr = allowedValues as string[];
+                    const itemValLower = itemValue.toLowerCase();
+                    const allowedLower = allowedArr.map((v: string) => v.toLowerCase());
+                    if (!allowedLower.includes(itemValLower)) {
+                      matchesTraits = false;
+                      break;
+                    }
+                  }
+                  if (!matchesTraits) continue;
+                }
+
+                // Price Check
+                if (price <= 0 || price > filter.priceMax) continue;
+
+                // Filter matched!
+                matchesAnyFilter = true;
+                if (filter.autoBuy) shouldAutoBuy = true;
               }
 
-              // Listing Logic for Unknown (Price 0 safety)
-              if (price <= 0 || price > target.priceMax) continue;
+              if (matchesAnyFilter) {
+                const listing: Listing = {
+                  source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
+                  mint: potentialMint,
+                  price: price,
+                  listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
+                  timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
+                  seller: event.feePayer || 'Unknown',
+                  name: itemMeta.name,
+                  symbol: collectionSymbol,
+                  imageUrl: itemMeta.image,
+                  rank: itemRankMax, // Using captured max values
+                  rarity: itemTierMax,
+                  rank_additive: itemMeta.rank_additive,
+                  tier_additive: itemMeta.tier_additive,
+                  score_additive: itemMeta.score_statistical,
+                  rank_statistical: itemMeta.rank_statistical,
+                  tier_statistical: itemMeta.tier_statistical,
+                  score_statistical: itemMeta.score_statistical
+                };
 
-              const listing: Listing = {
-                source: isMagicEdenListing ? 'MagicEden' : (event.source || 'Unknown'),
-                mint: potentialMint,
-                price: price,
-                listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
-                timestamp: event.timestamp ? event.timestamp * 1000 : Date.now(),
-                seller: event.feePayer || 'Unknown', // Keep consistent with old code assumption
-                name: itemMeta.name,
-                symbol: collectionSymbol,
-                imageUrl: itemMeta.image,
-                rank: itemRank,
-                rarity: itemTier,
-                rank_additive: itemMeta.rank_additive,
-                tier_additive: itemMeta.tier_additive,
-                score_additive: itemMeta.score_statistical, // reusing statistical score if additive missing, or keeping consistent
-                rank_statistical: itemMeta.rank_statistical,
-                tier_statistical: itemMeta.tier_statistical,
-                score_statistical: itemMeta.score_statistical
-              };
+                broadcaster.broadcastListing(listing);
 
-              broadcaster.broadcastListing(listing);
-
-              // Auto Buy Logic for UNKNOWN events (Critical addition to match feature parity)
-              if (target.autoBuy) {
-                console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
-                executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0)
-                  .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
-                  .catch(err => {
-                    if (err === 'SKIPPED_DUPLICATE') return;
-                    console.error(`[AutoBuy] FAILED: ${err.message}`)
-                  });
+                // Auto Buy (per filter)
+                if (shouldAutoBuy) {
+                  console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
+                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0)
+                    .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                    .catch(err => {
+                      if (err === 'SKIPPED_DUPLICATE') return;
+                      console.error(`[AutoBuy] FAILED: ${err.message}`)
+                    });
+                }
+                break; // Found matching listing, break potentialMint loop (since mint found)
               }
-
-              break;
+              break; // Found item in collection
             }
           }
         }
@@ -559,82 +669,108 @@ app.post('/webhook', (req, res) => {
             for (const target of targets) {
               const itemMeta = collectionService.getItem(target.symbol, potentialMint);
 
-              // Verbose log for potential matches
-              // console.log(`[RawParser] Checking ${potentialMint} against ${target.symbol} -> ${!!itemMeta}`); 
-
               if (itemMeta) {
                 console.log(`[RawParser] MATCH FOUND! ${itemMeta.name} is in ${target.symbol}`);
-                // Found a watched item in this transaction
-                if (price > target.priceMax) continue;
 
-                // Rarity Check
-                const rarityType = target.rarityType || 'statistical';
-                let itemTier = rarityType === 'additive' ? (itemMeta.tier_additive || 'COMMON') : (itemMeta.tier_statistical || 'COMMON');
-                let itemRank = rarityType === 'additive' ? (itemMeta.rank_additive || 0) : (itemMeta.rank_statistical || 0);
+                // Get item rarity info once
+                const itemRankStat = itemMeta.rank_statistical || itemMeta.rank || 0;
+                const itemRankAdd = itemMeta.rank_additive || itemMeta.rank || 0;
+                const itemTierStat = itemMeta.tier_statistical || itemMeta.tier || 'COMMON';
+                const itemTierAdd = itemMeta.tier_additive || itemMeta.tier || 'COMMON';
 
-                if (target.minRarity) {
-                  const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
-                  const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
-                  if (itemRarityVal < targetRarityVal) continue;
-                }
+                let matchesAnyFilter = false;
+                let shouldAutoBuy = false;
 
-                // Trait Filtering (Raw Parser v2)
-                if (target.traitFilters) {
-                  let matchesTraits = true;
-                  for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
-                    const traitKey = traitType.toLowerCase();
-                    const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+                // We'll use these for the listing object
+                let itemRankMax = itemRankStat;
+                let itemTierMax = itemTierStat;
 
-                    if (!itemValue) {
-                      matchesTraits = false;
-                      break;
-                    }
+                // Check each filter
+                for (const filter of target.filters) {
+                  // Price Check
+                  if (price > filter.priceMax) continue;
 
-                    // Loose matching
-                    const itemValLower = itemValue.toLowerCase();
-                    const allowedLower = allowedValues.map(v => v.toLowerCase());
-                    if (!allowedLower.includes(itemValLower)) {
-                      matchesTraits = false;
-                      break;
-                    }
+                  // Rarity Check
+                  const rarityType = filter.rarityType || 'statistical';
+                  let itemTier = rarityType === 'additive' ? itemTierAdd : itemTierStat;
+                  let itemRank = rarityType === 'additive' ? itemRankAdd : itemRankStat;
+
+                  // Max Rank Check
+                  if (filter.maxRank && itemRank > filter.maxRank) continue;
+
+                  // Min Rarity Tier Check
+                  if (filter.minRarity) {
+                    const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
+                    const targetRarityVal = rarityOrder[filter.minRarity.toUpperCase()] || 0;
+                    if (itemRarityVal < targetRarityVal) continue;
                   }
-                  if (!matchesTraits) continue;
+
+                  // Trait Filtering
+                  if (filter.traitFilters) {
+                    let matchesTraits = true;
+                    for (const [traitType, allowedValues] of Object.entries(filter.traitFilters)) {
+                      const traitKey = traitType.toLowerCase();
+                      const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+                      if (!itemValue) {
+                        matchesTraits = false;
+                        break;
+                      }
+
+                      const allowedArr = allowedValues as string[];
+                      const itemValLower = itemValue.toLowerCase();
+                      const allowedLower = allowedArr.map((v: string) => v.toLowerCase());
+                      if (!allowedLower.includes(itemValLower)) {
+                        matchesTraits = false;
+                        break;
+                      }
+                    }
+                    if (!matchesTraits) continue;
+                  }
+
+                  // Filter matched!
+                  matchesAnyFilter = true;
+                  if (filter.autoBuy) shouldAutoBuy = true;
                 }
 
-                const listing: Listing = {
-                  source: 'MagicEden',
-                  mint: potentialMint,
-                  price: price,
-                  listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
-                  timestamp: (event.blockTime || Date.now() / 1000) * 1000,
-                  seller: seller || 'Unknown',
-                  name: itemMeta.name,
-                  symbol: target.symbol,
-                  imageUrl: itemMeta.image,
-                  rank: itemRank,
-                  rarity: itemTier,
-                  rank_additive: itemMeta.rank_additive,
-                  tier_additive: itemMeta.tier_additive,
-                  score_additive: itemMeta.score_statistical,
-                  rank_statistical: itemMeta.rank_statistical,
-                  tier_statistical: itemMeta.tier_statistical,
-                  score_statistical: itemMeta.score_statistical,
-                  sellerExpiry: expiry,
-                  auctionHouse: auctionHouse
-                };
+                if (matchesAnyFilter) {
+                  const listing: Listing = {
+                    source: 'MagicEden',
+                    mint: potentialMint,
+                    price: price,
+                    listingUrl: `https://magiceden.io/item-details/${potentialMint}`,
+                    timestamp: (event.blockTime || Date.now() / 1000) * 1000,
+                    seller: seller || 'Unknown',
+                    name: itemMeta.name,
+                    symbol: target.symbol,
+                    imageUrl: itemMeta.image,
+                    rank: itemRankMax, // Using captured max values
+                    rarity: itemTierMax,
+                    rank_additive: itemMeta.rank_additive,
+                    tier_additive: itemMeta.tier_additive,
+                    score_additive: itemMeta.score_statistical,
+                    rank_statistical: itemMeta.rank_statistical,
+                    tier_statistical: itemMeta.tier_statistical,
+                    score_statistical: itemMeta.score_statistical,
+                    sellerExpiry: expiry,
+                    auctionHouse: auctionHouse
+                  };
 
-                broadcaster.broadcastListing(listing);
+                  broadcaster.broadcastListing(listing);
 
-                if (target.autoBuy) {
-                  console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
-                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry)
-                    .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
-                    .catch(err => {
-                      if (err === 'SKIPPED_DUPLICATE') return;
-                      console.error(`[AutoBuy] FAILED: ${err.message}`)
-                    });
+                  // Auto Buy (per filter)
+                  if (shouldAutoBuy) {
+                    console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
+                    executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry)
+                      .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                      .catch(err => {
+                        if (err === 'SKIPPED_DUPLICATE') return;
+                        console.error(`[AutoBuy] FAILED: ${err.message}`)
+                      });
+                  }
+                  break; // Found matching listing, break potentialMint loop (since mint found)
                 }
-                break;
+                break; // Found item in collection
               }
             }
           }
