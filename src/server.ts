@@ -272,12 +272,12 @@ app.post('/webhook', (req, res) => {
         /*const end = process.hrtime(start);
         const procTime = (end[0] * 1000 + end[1] / 1e6).toFixed(3);
         console.log(`[Processing] Logic took ${procTime}ms`);*/
-      } else if (event.type === 'UNKNOWN' && event.accountData) {
+      } else if ((event.type === 'UNKNOWN' || event.type === 'TRANSACTION') && event.accountData) {
 
-        // Latency Check for UNKNOWN events
+        // Latency Check for UNKNOWN/RAW events
         if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
-          console.log(`[Latency] (UNKNOWN) ${latency}ms delay from Chain to Localhost`);
+          console.log(`[Latency] (${event.type}) ${latency}ms delay from Chain to Localhost`);
         }
 
         /*/ Internal Processing Check
