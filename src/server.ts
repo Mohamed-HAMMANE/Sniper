@@ -159,9 +159,6 @@ app.post('/webhook', (req, res) => {
       'MYTHIC': 5
     };
 
-    console.log("Raw data:");
-    console.log(notifications);
-
     for (const event of notifications) {
       if (event.type === 'NFT_LISTING') {
         const eventData = event.events.nft;
