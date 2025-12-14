@@ -336,7 +336,8 @@ export class SetupManager {
                         webhookURL: WEBHOOK_URL,
                         transactionTypes: ['ANY'], // Raw webhook requires broadly compatible types
                         accountAddresses: updatedMints,
-                        webhookType: 'raw' // Changed from 'enhanced' for speed
+                        webhookType: 'raw', // Changed from 'enhanced' for speed
+                        txnStatus: 'success' // Only successful txns
                     })
                 });
 
@@ -350,7 +351,8 @@ export class SetupManager {
                         webhookURL: WEBHOOK_URL,
                         transactionTypes: ['ANY'],
                         accountAddresses: newMints,
-                        webhookType: 'raw'
+                        webhookType: 'raw',
+                        txnStatus: 'success'
                     })
                 });
             }
