@@ -471,9 +471,11 @@ app.post('/webhook', (req, res) => {
                     seller = accountKeys[0];
                   }
 
-                  // Extract Auction House
+                  // Extract Auction House - Check instruction first, then global keys
                   const CANONICAL_AH = 'E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe';
                   if (ix.accounts && ix.accounts.includes(CANONICAL_AH)) {
+                    auctionHouse = CANONICAL_AH;
+                  } else if (accountKeys.includes(CANONICAL_AH)) {
                     auctionHouse = CANONICAL_AH;
                   }
 
@@ -685,9 +687,9 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     let authTokenATA = sellerATA;
     let authAuctionHouse = auctionHouse;
 
-    // FALLBACK: If we don't know the seller (e.g. Manual Buy from UI where seller was Unknown), we MUST fetch.
-    if (!seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown') {
-      console.log('[Buy] Missing Seller/ATA info. Falling back to Smart Fetch...');
+    // FALLBACK: If we don't know the seller (e.g. Manual Buy from UI where seller was Unknown), OR missing Auction House, we MUST fetch.
+    if (!seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown' || !authAuctionHouse) {
+      console.log('[Buy] Missing Seller/ATA/AH info. Falling back to Smart Fetch...');
 
       const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
       const detailsResp = await fetch(detailsUrl, {
