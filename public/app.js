@@ -376,6 +376,12 @@ function renderActiveTargets() {
             <option value="additive" ${target.rarityType === 'additive' ? 'selected' : ''}>Add</option>
           </select>
         </div>
+        <div class="control-group">
+            <span class="control-label">Traits</span>
+            <button class="btn-icon" style="width:100%; height:26px; border:1px solid var(--border); border-radius:4px; font-size:10px;" onclick="openTraitFilters('${target.symbol}')">
+                ${target.traitFilters ? Object.keys(target.traitFilters).length + ' Active' : 'Filter'}
+            </button>
+        </div>
       </div>
     `;
     activeTargetsList.appendChild(tag);
@@ -734,3 +740,206 @@ function handleSetupError(data) {
   showToast(`Setup Failed: ${data.error}`, 'error');
   closeSetup();
 }
+
+// ==================== TRAIT FILTERS ====================
+let currentTraitSymbol = null;
+let currentTraits = {}; // Raw trait data from API { Type: { Value: Count } }
+let activeFilters = {}; // Current work-in-progress filters
+let currentCategory = null; // Currently selected category
+let totalItems = 0; // Total items in collection for percentage calculation
+
+window.openTraitFilters = async function (symbol) {
+  currentTraitSymbol = symbol;
+  const modal = document.getElementById('trait-modal');
+
+  // Reset state
+  modal.classList.remove('hidden');
+  document.getElementById('trait-sidebar').innerHTML = '<div style="padding:16px;color:var(--text-muted);">Loading...</div>';
+  document.getElementById('trait-options').innerHTML = '';
+  document.getElementById('trait-search').value = '';
+
+  // Get current active filters from target
+  const target = activeTargets.find(t => t.symbol === symbol);
+  activeFilters = target.traitFilters ? JSON.parse(JSON.stringify(target.traitFilters)) : {};
+
+  try {
+    const res = await fetch(`/api/traits/${symbol}`);
+    const data = await res.json();
+
+    if (data.success) {
+      currentTraits = data.traits;
+      // Calculate total items (use first category's total as proxy)
+      const firstCat = Object.keys(currentTraits)[0];
+      if (firstCat) {
+        totalItems = Object.values(currentTraits[firstCat]).reduce((a, b) => a + b, 0);
+      }
+      renderTraitSidebar();
+      updateTraitSummary();
+    } else {
+      document.getElementById('trait-sidebar').innerHTML = '<div style="padding:16px;color:var(--danger);">Error loading traits</div>';
+    }
+  } catch (e) {
+    console.error(e);
+    document.getElementById('trait-sidebar').innerHTML = '<div style="padding:16px;color:var(--danger);">Error loading traits</div>';
+  }
+}
+
+function renderTraitSidebar() {
+  const sidebar = document.getElementById('trait-sidebar');
+  sidebar.innerHTML = '';
+
+  const categories = Object.keys(currentTraits).sort();
+
+  categories.forEach((cat, index) => {
+    // Count how many are selected in this category
+    const selectedCount = activeFilters[cat] ? activeFilters[cat].length : 0;
+
+    const div = document.createElement('div');
+    div.className = 'trait-category';
+    div.dataset.category = cat;
+    div.innerHTML = `
+      <span>${cat}</span>
+      <span class="trait-category-count">${selectedCount}</span>
+    `;
+    div.onclick = () => selectTraitCategory(cat, div);
+
+    // Select first one by default
+    if (index === 0) {
+      currentCategory = cat;
+      setTimeout(() => selectTraitCategory(cat, div), 0);
+    }
+
+    sidebar.appendChild(div);
+  });
+}
+
+function updateCategoryBadge(category) {
+  const el = document.querySelector(`.trait-category[data-category="${category}"]`);
+  if (el) {
+    const count = activeFilters[category] ? activeFilters[category].length : 0;
+    el.querySelector('.trait-category-count').textContent = count;
+  }
+}
+
+function selectTraitCategory(category, element) {
+  currentCategory = category;
+
+  // UI Update
+  document.querySelectorAll('.trait-category').forEach(el => el.classList.remove('active'));
+  element.classList.add('active');
+
+  // Clear search
+  document.getElementById('trait-search').value = '';
+
+  // Render Options
+  renderTraitOptions(category);
+}
+
+function renderTraitOptions(category, searchFilter = '') {
+  const container = document.getElementById('trait-options');
+  container.innerHTML = '';
+
+  const values = currentTraits[category];
+  if (!values) return;
+
+  // Sort by count descending (most common first, like ME)
+  let sortedValues = Object.entries(values).sort((a, b) => b[1] - a[1]);
+
+  // Apply search filter
+  if (searchFilter) {
+    const lowerFilter = searchFilter.toLowerCase();
+    sortedValues = sortedValues.filter(([val]) => val.toLowerCase().includes(lowerFilter));
+  }
+
+  sortedValues.forEach(([val, count]) => {
+    const isSelected = activeFilters[category] && activeFilters[category].includes(val);
+    const pct = totalItems > 0 ? ((count / totalItems) * 100).toFixed(2) : '0.00';
+
+    const row = document.createElement('div');
+    row.className = `trait-option ${isSelected ? 'selected' : ''}`;
+    row.dataset.value = val;
+    row.onclick = () => toggleTraitFilter(category, val, row);
+
+    row.innerHTML = `
+      <div class="trait-checkbox"></div>
+      <div class="trait-option-name">${val}</div>
+      <div class="trait-option-stats">
+        <span class="trait-option-count">${count}</span>
+        <span class="trait-option-pct">●${pct}%</span>
+      </div>
+    `;
+
+    container.appendChild(row);
+  });
+}
+
+window.filterTraitOptions = function (query) {
+  if (currentCategory) {
+    renderTraitOptions(currentCategory, query);
+  }
+}
+
+window.selectAllVisible = function () {
+  if (!currentCategory) return;
+
+  const container = document.getElementById('trait-options');
+  const rows = container.querySelectorAll('.trait-option');
+
+  rows.forEach(row => {
+    const val = row.dataset.value;
+    if (!activeFilters[currentCategory]) activeFilters[currentCategory] = [];
+    if (!activeFilters[currentCategory].includes(val)) {
+      activeFilters[currentCategory].push(val);
+      row.classList.add('selected');
+    }
+  });
+
+  updateCategoryBadge(currentCategory);
+  updateTraitSummary();
+}
+
+function toggleTraitFilter(category, value, element) {
+  if (!activeFilters[category]) activeFilters[category] = [];
+
+  const idx = activeFilters[category].indexOf(value);
+  if (idx > -1) {
+    // Remove
+    activeFilters[category].splice(idx, 1);
+    element.classList.remove('selected');
+    if (activeFilters[category].length === 0) delete activeFilters[category];
+  } else {
+    // Add
+    activeFilters[category].push(value);
+    element.classList.add('selected');
+  }
+
+  updateCategoryBadge(category);
+  updateTraitSummary();
+}
+
+function updateTraitSummary() {
+  const count = Object.values(activeFilters).reduce((acc, arr) => acc + arr.length, 0);
+  document.getElementById('trait-summary').textContent = `${count} traits selected`;
+}
+
+window.saveTraitFilters = async function () {
+  if (!currentTraitSymbol) return;
+
+  await updateTarget(currentTraitSymbol, 'traitFilters', Object.keys(activeFilters).length > 0 ? activeFilters : null);
+  closeTraitFilters();
+  renderActiveTargets();
+}
+
+window.closeTraitFilters = function () {
+  document.getElementById('trait-modal').classList.add('hidden');
+  currentTraitSymbol = null;
+  currentTraits = {};
+  activeFilters = {};
+  currentCategory = null;
+}
+
+// Close on background click
+document.getElementById('trait-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'trait-modal') window.closeTraitFilters();
+});
+

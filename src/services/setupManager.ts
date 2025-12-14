@@ -182,7 +182,7 @@ export class SetupManager {
                 }
             });
 
-            return {
+            const itemObj = {
                 mint: item.id,
                 name: itemName,
                 image: item.content.files?.[0]?.uri || item.content.links?.image,
@@ -191,8 +191,19 @@ export class SetupManager {
                 rank_additive: 0,
                 tier_additive: '',
                 rank_statistical: 0,
-                tier_statistical: ''
+                tier_statistical: '',
+                attributes: {} as Record<string, string>
             };
+
+            // Save traits to item for filtering
+            allTraitTypes.forEach(type => {
+                const found = attrs.find((a: any) => String(a.trait_type).trim().toLowerCase() === type);
+                if (found && found.value) {
+                    itemObj.attributes[type] = String(found.value).trim();
+                }
+            });
+
+            return itemObj;
         });
 
         // 3. Rank & Tier
@@ -232,7 +243,8 @@ export class SetupManager {
                 score_additive: item.score_additive,
                 rank_statistical: item.rank_statistical,
                 tier_statistical: item.tier_statistical,
-                score_statistical: item.score_statistical
+                score_statistical: item.score_statistical,
+                attributes: item.attributes
             };
         });
 

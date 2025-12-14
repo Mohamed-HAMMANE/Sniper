@@ -20,6 +20,9 @@ interface ItemMetadata {
     // Legacy fallback (optional)
     rank?: number;
     tier?: string;
+
+    // Attributes for filtering
+    attributes?: Record<string, string>;
 }
 
 export class CollectionService {
@@ -143,5 +146,26 @@ export class CollectionService {
             Object.assign(col, updates);
             this.isDirty = true;
         }
+    }
+
+    public getTraits(symbol: string): Record<string, Record<string, number>> {
+        const db = this.itemDatabases.get(symbol);
+        if (!db) return {};
+
+        const traits: Record<string, Record<string, number>> = {};
+
+        Object.values(db).forEach(item => {
+            if (item.attributes) {
+                Object.entries(item.attributes).forEach(([key, value]) => {
+                    // key is already normalized to lowercase in setupManager
+                    // but let's be safe and keep it consistent
+                    if (!traits[key]) traits[key] = {};
+                    if (!traits[key][value]) traits[key][value] = 0;
+                    traits[key][value]++;
+                });
+            }
+        });
+
+        return traits;
     }
 }

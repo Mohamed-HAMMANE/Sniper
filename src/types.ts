@@ -4,6 +4,7 @@ export interface TargetCollection {
   minRarity?: string; // 'COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'
   rarityType?: 'additive' | 'statistical';
   autoBuy?: boolean;
+  traitFilters?: Record<string, string[]>; // e.g. { "Background": ["Red", "Blue"] }
 }
 
 export interface CollectionMetadata {

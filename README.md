@@ -11,7 +11,8 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **🎯 Multi-Target Support**: Monitor multiple collections simultaneously with unique constraints (Max Price, Min Rarity) for each.
 - **🧠 Advanced Parsing**: Custom decoder for **Magic Eden V2** instructions, detecting listings even when standard parsers return "Unknown" transaction types.
 - **🛡️ Rarity Integration**: Filter snipes by rarity rank (Statistical or Additive scaling) to find underpriced rare items.
-- **� Auto-Buying Engine**: Integrated **Jito Bundles** support to bypass network congestion and protect against sandwiches. Includes "Smart Fetch" to validate listing parameters before execution.
+- **🎨 Trait Filters**: SolRarity Sniper-style attribute picker to filter by specific traits (e.g., \"Background: Red\" AND \"Hat: Crown\"). Uses OR within categories, AND between categories.
+- **💰 Auto-Buying Engine**: Integrated **Jito Bundles** support to bypass network congestion and protect against sandwiches. Includes "Smart Fetch" to validate listing parameters before execution.
 
 ### Modern Dashboard UI
 - **📊 Real-Time Charts**: Interactive floor price history charts for every watched collection.
@@ -121,6 +122,7 @@ Wallet settings are managed in `.env`.
 - `GET /api/listings-stream`: SSE endpoint for frontend updates.
 - `POST /api/buy`: Trigger manual buy.
 - `POST /api/feed/clear`: Clear the current listings feed.
+- `GET /api/traits/:symbol`: Get available traits for a collection (for Trait Filters UI).
 - `GET /api/stats`: System health stats.
 
 ## 🐛 Troubleshooting

@@ -227,6 +227,38 @@
         </div>
     </div>
 
+    <!-- Trait Filter Modal -->
+    <div id="trait-modal" class="modal-overlay hidden">
+        <div class="modal-content trait-modal-content">
+            <div class="modal-header">
+                <h2>Attributes</h2>
+                <button class="modal-close" onclick="closeTraitFilters()">×</button>
+            </div>
+            <div class="trait-body">
+                <div class="trait-sidebar" id="trait-sidebar">
+                    <!-- Categories with count badges -->
+                </div>
+                <div class="trait-options-panel">
+                    <div class="trait-search-bar">
+                        <input type="text" class="trait-search-input" id="trait-search"
+                            placeholder="Search an attribute..." oninput="filterTraitOptions(this.value)">
+                        <button class="trait-select-all-btn" onclick="selectAllVisible()">✓</button>
+                    </div>
+                    <div class="trait-options-list" id="trait-options">
+                        <!-- Trait rows -->
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="trait-summary" id="trait-summary">0 traits selected</div>
+                <div class="modal-footer-actions">
+                    <button class="btn-cancel" onclick="closeTraitFilters()">Cancel</button>
+                    <button class="btn-apply" onclick="saveTraitFilters()">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
 </body>

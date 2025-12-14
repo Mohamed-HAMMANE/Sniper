@@ -86,7 +86,8 @@ app.post('/api/target', async (req, res) => {
     priceMax: Number(priceMax),
     minRarity: minRarity,
     rarityType: req.body.rarityType || 'statistical',
-    autoBuy: req.body.autoBuy === true
+    autoBuy: req.body.autoBuy === true,
+    traitFilters: req.body.traitFilters
   };
 
   await configManager.addTarget(target);
@@ -135,6 +136,13 @@ app.post('/api/setup/init', async (req, res) => {
   // Fire and forget - client listens to SSE
   setupManager.initializeCollection(symbol, address, name, image, type, minRarity || 'COMMON');
   res.json({ success: true, message: 'Initialization started' });
+});
+
+// Get Traits for Collection
+app.get('/api/traits/:symbol', (req, res) => {
+  const { symbol } = req.params;
+  const traits = collectionService.getTraits(symbol);
+  res.json({ success: true, traits });
 });
 
 // Webhook Endpoint for Helius
@@ -229,6 +237,31 @@ app.post('/webhook', (req, res) => {
             const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
             const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
             if (itemRarityVal < targetRarityVal) continue;
+          }
+
+          // Trait Filtering
+          if (target.traitFilters) {
+            let matchesTraits = true;
+            for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
+              // Normalize Keys: standard is Title Case usually, but we stored as lowercase in setupManager? 
+              // Wait, setupManager stored keys as lowercased: String(a.trait_type).trim().toLowerCase()
+              // So we should compare against lowercased keys.
+              const traitKey = traitType.toLowerCase();
+              const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+              if (!itemValue) {
+                matchesTraits = false;
+                break;
+              }
+
+              // allow case-insensitive value match? stored as trim().
+              if (!allowedValues.includes(itemValue) && !allowedValues.includes(itemValue.toLowerCase()) && !allowedValues.map(v => v.toLowerCase()).includes(itemValue.toLowerCase())) {
+                // Try strict match first, then loose
+                matchesTraits = false;
+                break;
+              }
+            }
+            if (!matchesTraits) continue;
           }
 
           const listing: Listing = {
@@ -338,6 +371,29 @@ app.post('/webhook', (req, res) => {
                 const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
                 const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
                 if (itemRarityVal < targetRarityVal) continue;
+              }
+
+              // Trait Filtering (Raw Parser)
+              if (target.traitFilters) {
+                let matchesTraits = true;
+                for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
+                  const traitKey = traitType.toLowerCase();
+                  const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+                  if (!itemValue) {
+                    matchesTraits = false;
+                    break;
+                  }
+
+                  // Loose matching for safety
+                  const itemValLower = itemValue.toLowerCase();
+                  const allowedLower = allowedValues.map(v => v.toLowerCase());
+                  if (!allowedLower.includes(itemValLower)) {
+                    matchesTraits = false;
+                    break;
+                  }
+                }
+                if (!matchesTraits) continue;
               }
 
               // Listing Logic for Unknown (Price 0 safety)
@@ -520,6 +576,29 @@ app.post('/webhook', (req, res) => {
                   const itemRarityVal = rarityOrder[itemTier.toUpperCase()] || 0;
                   const targetRarityVal = rarityOrder[target.minRarity.toUpperCase()] || 0;
                   if (itemRarityVal < targetRarityVal) continue;
+                }
+
+                // Trait Filtering (Raw Parser v2)
+                if (target.traitFilters) {
+                  let matchesTraits = true;
+                  for (const [traitType, allowedValues] of Object.entries(target.traitFilters)) {
+                    const traitKey = traitType.toLowerCase();
+                    const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
+
+                    if (!itemValue) {
+                      matchesTraits = false;
+                      break;
+                    }
+
+                    // Loose matching
+                    const itemValLower = itemValue.toLowerCase();
+                    const allowedLower = allowedValues.map(v => v.toLowerCase());
+                    if (!allowedLower.includes(itemValLower)) {
+                      matchesTraits = false;
+                      break;
+                    }
+                  }
+                  if (!matchesTraits) continue;
                 }
 
                 const listing: Listing = {
