@@ -448,7 +448,10 @@ app.post('/webhook', (req, res) => {
               console.log(`[RawParser] Found ME Instruction! Data: ${ix.data}`);
               console.log(`[RawParser] Hex: ${hexData}`);
 
-              if (hexData.startsWith(SELL_DISCRIMINATOR)) {
+              const SELL_DISC_1 = '1ff3f73b8653a5da';
+              const SELL_DISC_2 = '3a32ac6fa697165e'; // New one
+
+              if (hexData.startsWith(SELL_DISC_1) || hexData.startsWith(SELL_DISC_2)) {
                 const priceHex = hexData.substring(16, 32);
                 if (priceHex.length === 16) {
                   const buffer = Buffer.from(priceHex, 'hex');
