@@ -747,6 +747,22 @@ body {
   justify-content: center;
 }
 
+.sidebar.collapsed .target-thumb {
+  width: 32px;
+  height: 32px;
+}
+
+.sidebar.collapsed .target-thumb-placeholder {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+}
+
+.sidebar.collapsed .stats,
+.sidebar.collapsed .balance-badge {
+  display: none;
+}
+
 /* ==================== MAIN CONTENT ==================== */
 .main-content {
   flex: 1;
