@@ -763,6 +763,19 @@ body {
   display: none;
 }
 
+.sidebar.collapsed .btn-collapse,
+.sidebar.collapsed .watch-badge {
+  display: none;
+}
+
+.sidebar.collapsed .watches-list {
+  overflow-x: hidden;
+}
+
+.sidebar.collapsed {
+  overflow-x: hidden;
+}
+
 /* ==================== MAIN CONTENT ==================== */
 .main-content {
   flex: 1;
