@@ -36,14 +36,15 @@ export class HistoryService {
             }
         }
 
-        // Optimization: Only save if price changed significantly (> 0.05 SOL)
-        // This prevents saving 60 duplicates per hour
+        // Optimization: Only save if price changed significantly (>= 1.5%)
+        // This prevents saving duplicates while capturing meaningful moves on low-value collections
         if (history.length > 0) {
             const lastPoint = history[history.length - 1];
             const diff = Math.abs(price - lastPoint.p);
+            const percentChange = diff / lastPoint.p;
 
-            // If change is less than 0.05 SOL, ignore it
-            if (diff < 0.05) {
+            // If change is less than 1.5%, ignore it
+            if (percentChange < 0.015) {
                 return;
             }
         }
