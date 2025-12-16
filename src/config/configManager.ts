@@ -163,4 +163,13 @@ export class ConfigManager {
     this.config.targets = this.config.targets.filter(t => t.symbol !== symbol);
     await this.saveConfig();
   }
+
+  public async setTargetCollapsed(symbol: string, collapsed: boolean): Promise<boolean> {
+    const target = this.config.targets.find(t => t.symbol === symbol);
+    if (!target) return false;
+
+    target.collapsed = collapsed;
+    await this.saveConfig();
+    return true;
+  }
 }

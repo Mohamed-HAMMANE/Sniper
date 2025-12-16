@@ -182,6 +182,19 @@ app.delete('/api/target/:symbol', async (req, res) => {
   res.json({ success: true, targets: configManager.getTargets() });
 });
 
+// Toggle collapse state
+app.put('/api/target/:symbol/collapse', async (req, res) => {
+  const { symbol } = req.params;
+  const { collapsed } = req.body;
+
+  const success = await configManager.setTargetCollapsed(symbol, collapsed);
+  if (!success) {
+    return res.status(404).json({ error: 'Target not found' });
+  }
+
+  res.json({ success: true });
+});
+
 // Get stats
 app.get('/api/stats', (req, res) => {
   res.json({

@@ -13,6 +13,7 @@ export interface FilterRule {
 export interface TargetCollection {
   symbol: string;
   filters: FilterRule[];
+  collapsed?: boolean;
 }
 
 export interface CollectionMetadata {

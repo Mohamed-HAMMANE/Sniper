@@ -315,8 +315,6 @@ document.getElementById('chart-modal').addEventListener('click', (e) => {
 });
 
 // ==================== ACTIVE TARGETS ====================
-// Track collapsed state per collection
-const collapsedCards = new Set();
 
 function renderActiveTargets() {
   activeTargetsList.innerHTML = '';
@@ -331,8 +329,9 @@ function renderActiveTargets() {
     const name = col ? col.name : target.symbol;
     const image = col?.image || '';
     const fp = col?.floorPrice;
-    const supply = col?.supply || 0;
-    const isCollapsed = collapsedCards.has(target.symbol);
+
+    // Use the state from the target object itself (loaded from config)
+    const isCollapsed = target.collapsed === true;
 
     const card = document.createElement('div');
     card.className = `target-card ${isCollapsed ? 'collapsed' : ''}`;
@@ -440,14 +439,26 @@ function renderActiveTargets() {
   });
 }
 
-// Toggle card collapse state
-window.toggleCardCollapse = function (symbol) {
-  if (collapsedCards.has(symbol)) {
-    collapsedCards.delete(symbol);
-  } else {
-    collapsedCards.add(symbol);
-  }
+// Toggle card collapse state and persist to server
+window.toggleCardCollapse = async function (symbol) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  if (!target) return;
+
+  // Optimistic update
+  const newState = !target.collapsed;
+  target.collapsed = newState;
   renderActiveTargets();
+
+  try {
+    await fetch(`/api/target/${symbol}/collapse`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collapsed: newState })
+    });
+  } catch (e) {
+    console.error('Failed to save state', e);
+    // revert on failure?
+  }
 };
 
 
