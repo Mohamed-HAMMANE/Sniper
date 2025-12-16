@@ -346,15 +346,14 @@ app.post('/webhook', (req, res) => {
               let matchesTraits = true;
               for (const [traitType, allowedValues] of Object.entries(filter.traitFilters)) {
                 const traitKey = traitType.toLowerCase();
-                const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
-
-                if (!itemValue) {
-                  matchesTraits = false;
-                  break;
-                }
+                // Treat missing traits as "none"
+                const itemValue = itemMeta.attributes ? (itemMeta.attributes[traitKey] || 'none') : 'none';
 
                 const allowedArr = allowedValues as string[];
-                if (!allowedArr.includes(itemValue) && !allowedArr.includes(itemValue.toLowerCase()) && !allowedArr.map((v: string) => v.toLowerCase()).includes(itemValue.toLowerCase())) {
+                const itemValLower = itemValue.toLowerCase();
+                const allowedLower = allowedArr.map((v: string) => v.toLowerCase());
+
+                if (!allowedLower.includes(itemValLower)) {
                   matchesTraits = false;
                   break;
                 }
@@ -364,6 +363,15 @@ app.post('/webhook', (req, res) => {
 
             // All checks passed - this filter matches!
             matchesAnyFilter = true;
+
+            // Set Display Rank based on the filter that matched
+            if (filter.rarityType === 'additive') {
+              itemRankMax = itemRankAdd;
+              itemTierMax = itemTierAdd;
+            } else {
+              itemRankMax = itemRankStat;
+              itemTierMax = itemTierStat;
+            }
 
             // Upgrade to AutoBuy if this specific filter has it enabled
             if (filter.autoBuy) {
@@ -740,16 +748,13 @@ app.post('/webhook', (req, res) => {
                     let matchesTraits = true;
                     for (const [traitType, allowedValues] of Object.entries(filter.traitFilters)) {
                       const traitKey = traitType.toLowerCase();
-                      const itemValue = itemMeta.attributes ? itemMeta.attributes[traitKey] : undefined;
-
-                      if (!itemValue) {
-                        matchesTraits = false;
-                        break;
-                      }
+                      // Treat missing traits as "none"
+                      const itemValue = itemMeta.attributes ? (itemMeta.attributes[traitKey] || 'none') : 'none';
 
                       const allowedArr = allowedValues as string[];
                       const itemValLower = itemValue.toLowerCase();
                       const allowedLower = allowedArr.map((v: string) => v.toLowerCase());
+
                       if (!allowedLower.includes(itemValLower)) {
                         matchesTraits = false;
                         break;
@@ -760,6 +765,16 @@ app.post('/webhook', (req, res) => {
 
                   // Filter matched!
                   matchesAnyFilter = true;
+
+                  // Set Display Rank based on the filter that matched
+                  if (filter.rarityType === 'additive') {
+                    itemRankMax = itemRankAdd;
+                    itemTierMax = itemTierAdd;
+                  } else {
+                    itemRankMax = itemRankStat;
+                    itemTierMax = itemTierStat;
+                  }
+
                   if (filter.autoBuy) {
                     shouldAutoBuy = true;
                     // Capture max priority fee from any matching auto-buy filter

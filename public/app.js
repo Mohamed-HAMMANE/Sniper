@@ -362,6 +362,15 @@ function renderActiveTargets() {
             </div>
           </div>
 
+          <div class="filter-row">
+            <span class="filter-row-label">MAX RANK</span>
+            <div class="filter-row-input">
+              <input type="number" class="control-input" value="${filter.maxRank || ''}" placeholder="Any" step="1" 
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'maxRank', this.value)">
+              <span class="input-suffix-inline">#</span>
+            </div>
+          </div>
+
           
           <div class="filter-row">
             <span class="filter-row-label">MIN RARITY</span>
