@@ -9,6 +9,7 @@ interface HistoryPoint {
 
 export class HistoryService {
     private dataDir: string;
+    private lastChecks: Map<string, number> = new Map();
 
     constructor() {
         this.dataDir = path.join(__dirname, '../../data/history');
@@ -22,6 +23,17 @@ export class HistoryService {
     }
 
     public async addPoint(symbol: string, price: number): Promise<void> {
+        const now = Date.now();
+        const lastCheck = this.lastChecks.get(symbol) || 0;
+
+        // Check if 15 minutes have passed
+        if (now - lastCheck < 15 * 60 * 1000) {
+            return;
+        }
+
+        // Update last check time
+        this.lastChecks.set(symbol, now);
+
         const filePath = path.join(this.dataDir, `${symbol}.json`);
         let history: HistoryPoint[] = [];
 
