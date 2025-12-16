@@ -9,8 +9,15 @@ export class BalanceMonitor {
     private currentBalance: number = 0;
     private intervalId: NodeJS.Timeout | null = null;
 
-    constructor(rpcUrl: string, broadcaster: SSEBroadcaster) {
-        this.connection = new Connection(rpcUrl, 'confirmed');
+    constructor(rpcUrl: string, broadcaster: SSEBroadcaster, publicRpcUrl?: string) {
+        // Use Public RPC for polling if available, otherwise fallback to main RPC
+        const urlToUse = publicRpcUrl || rpcUrl;
+        this.connection = new Connection(urlToUse, 'confirmed');
+
+        if (publicRpcUrl) {
+            console.log(`[BalanceMonitor] Using Public RPC for updates: ${publicRpcUrl}`);
+        }
+
         this.broadcaster = broadcaster;
 
         // Load Wallet Public Key

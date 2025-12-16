@@ -5,8 +5,15 @@ export class ConfirmationService {
     private connection: Connection;
     private broadcaster: SSEBroadcaster;
 
-    constructor(rpcUrl: string, broadcaster: SSEBroadcaster) {
-        this.connection = new Connection(rpcUrl, 'confirmed');
+    constructor(rpcUrl: string, broadcaster: SSEBroadcaster, publicRpcUrl?: string) {
+        // Use Public RPC for confirmation checks if available, otherwise fallback to main RPC
+        const urlToUse = publicRpcUrl || rpcUrl;
+        this.connection = new Connection(urlToUse, 'confirmed');
+
+        if (publicRpcUrl) {
+            console.log(`[ConfirmationService] Using Public RPC for status checks: ${publicRpcUrl}`);
+        }
+
         this.broadcaster = broadcaster;
     }
 

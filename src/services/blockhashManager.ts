@@ -4,10 +4,17 @@ export class BlockhashManager {
     private connection: Connection;
     private latestBlockhash: BlockhashWithExpiryBlockHeight | null = null;
     private intervalId: NodeJS.Timeout | null = null;
-    private readonly POLL_INTERVAL_MS = 800; // Poll every 800ms (approx 2 blocks)
+    private readonly POLL_INTERVAL_MS = 10000; // Poll every 10s (safe for public RPCs)
 
-    constructor(rpcUrl: string) {
-        this.connection = new Connection(rpcUrl, 'confirmed');
+    constructor(rpcUrl: string, publicRpcUrl?: string) {
+        // Use Public RPC for polling if available, otherwise fallback to main RPC
+        const urlToUse = publicRpcUrl || rpcUrl;
+        this.connection = new Connection(urlToUse, 'confirmed');
+
+        if (publicRpcUrl) {
+            console.log(`[BlockhashManager] Using Public RPC for blockhash updates: ${publicRpcUrl}`);
+        }
+
         this.startPolling();
     }
 

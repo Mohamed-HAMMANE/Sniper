@@ -39,9 +39,10 @@ const cache = new ListingCache(60); // Cache for 60 minutes
 const collectionService = new CollectionService();
 const broadcaster = new SSEBroadcaster();
 const jitoService = new JitoService(RPC_URL);
-const blockhashManager = new BlockhashManager(RPC_URL);
-const confirmationService = new ConfirmationService(RPC_URL, broadcaster);
-const balanceMonitor = new BalanceMonitor(RPC_URL, broadcaster);
+const PUBLIC_RPC_URL = process.env.PUBLIC_RPC_URL;
+const blockhashManager = new BlockhashManager(RPC_URL, PUBLIC_RPC_URL);
+const confirmationService = new ConfirmationService(RPC_URL, broadcaster, PUBLIC_RPC_URL);
+const balanceMonitor = new BalanceMonitor(RPC_URL, broadcaster, PUBLIC_RPC_URL);
 const setupManager = new SetupManager(collectionService, broadcaster);
 
 // SSE endpoint
