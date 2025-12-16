@@ -6,6 +6,7 @@ export interface FilterRule {
   minRarity?: string;                       // Tier-based fallback ('COMMON' to 'MYTHIC')
   rarityType?: 'additive' | 'statistical';
   traitFilters?: Record<string, string[]>;  // e.g. { "Background": ["Red", "Blue"] }
+  priorityFee?: number;                     // Optional custom priority fee in SOL
   autoBuy: boolean;
 }
 

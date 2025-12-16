@@ -104,6 +104,7 @@ async function loadConfig() {
     const config = await res.json();
     activeTargets = config.targets || [];
     availableCollections = config.collections || [];
+    window.defaultPriorityFee = config.defaultPriorityFee; // Store globally for UI
     renderCollectionWidget();
     renderActiveTargets();
     updateWatchCount();
@@ -393,6 +394,15 @@ function renderActiveTargets() {
               ${traitCount > 0 ? traitCount + ' selected' : '0 selected'}
             </button>
           </div>
+
+          <div class="filter-row">
+            <span class="filter-row-label">JITO FEE (SOL)</span>
+            <div class="filter-row-input">
+              <input type="number" class="control-input" value="${filter.priorityFee || ''}" step="0.0001" placeholder="${window.defaultPriorityFee || '0.0005'}"
+                onchange="updateFilter('${target.symbol}', '${filter.id}', 'priorityFee', this.value)">
+              <span class="input-suffix-inline">◎</span>
+            </div>
+          </div>
           
           <button class="btn-delete-filter" onclick="deleteFilter('${target.symbol}', '${filter.id}')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
@@ -496,7 +506,7 @@ window.updateFilter = async function (symbol, filterId, field, value) {
   if (!filter) return;
 
   // Update local state
-  if (field === 'priceMax') filter.priceMax = parseFloat(value) || 1000;
+  if (field === 'priceMax' || field === 'priorityFee') filter[field] = parseFloat(value) || undefined;
   else if (field === 'maxRank') filter.maxRank = value ? parseInt(value) : undefined;
   else filter[field] = value;
 
@@ -504,7 +514,7 @@ window.updateFilter = async function (symbol, filterId, field, value) {
     const res = await fetch(`/api/target/${symbol}/filter/${filterId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: field === 'priceMax' ? parseFloat(value) : (field === 'maxRank' ? (value ? parseInt(value) : null) : value) })
+      body: JSON.stringify({ [field]: (field === 'priceMax' || field === 'priorityFee') ? (parseFloat(value) || undefined) : (field === 'maxRank' ? (value ? parseInt(value) : null) : value) })
     });
     if (res.ok) showToast('Saved', 'success');
   } catch (e) {

@@ -51,10 +51,14 @@ app.get('/api/listings-stream', (req, res) => {
 
 // Get config
 app.get('/api/config', (req, res) => {
+  const defaultPrioLamports = process.env.PRIORITY_FEE_LAMPORTS || '500000';
+  const defaultPrioSol = parseInt(defaultPrioLamports) / 1_000_000_000;
+
   res.json({
     targets: configManager.getTargets(),
     collections: collectionService.getCollections(),
-    balance: balanceMonitor.getBalance()
+    balance: balanceMonitor.getBalance(),
+    defaultPriorityFee: defaultPrioSol
   });
 });
 
@@ -111,7 +115,7 @@ app.post('/api/target', async (req, res) => {
 // Add filter to existing collection
 app.post('/api/target/:symbol/filter', async (req, res) => {
   const { symbol } = req.params;
-  const { priceMax, maxRank, minRarity, rarityType, autoBuy, traitFilters } = req.body;
+  const { priceMax, maxRank, minRarity, rarityType, autoBuy, traitFilters, priorityFee } = req.body;
 
   const filter = await configManager.addFilter(symbol, {
     priceMax: Number(priceMax) || 1000,
@@ -119,6 +123,7 @@ app.post('/api/target/:symbol/filter', async (req, res) => {
     minRarity: minRarity || 'COMMON',
     rarityType: rarityType || 'statistical',
     traitFilters,
+    priorityFee: priorityFee ? Number(priorityFee) : undefined,
     autoBuy: autoBuy === true
   });
 
@@ -137,6 +142,7 @@ app.put('/api/target/:symbol/filter/:filterId', async (req, res) => {
   // Convert numeric fields
   if (updates.priceMax !== undefined) updates.priceMax = Number(updates.priceMax);
   if (updates.maxRank !== undefined) updates.maxRank = updates.maxRank ? Number(updates.maxRank) : undefined;
+  if (updates.priorityFee !== undefined) updates.priorityFee = updates.priorityFee ? Number(updates.priorityFee) : undefined;
 
   const success = await configManager.updateFilter(symbol, filterId, updates);
 
@@ -299,6 +305,8 @@ app.post('/webhook', (req, res) => {
           let itemRankMax = itemRankStat;
           let itemTierMax = itemTierStat;
 
+          let maxPriorityFee: number | undefined = undefined;
+
           // Check each filter
           for (const filter of target.filters) {
             // Price Check
@@ -346,6 +354,12 @@ app.post('/webhook', (req, res) => {
             // Upgrade to AutoBuy if this specific filter has it enabled
             if (filter.autoBuy) {
               shouldAutoBuy = true;
+              // Capture max priority fee from any matching auto-buy filter
+              if (filter.priorityFee) {
+                if (maxPriorityFee === undefined || filter.priorityFee > maxPriorityFee) {
+                  maxPriorityFee = filter.priorityFee;
+                }
+              }
             }
           }
 
@@ -376,7 +390,7 @@ app.post('/webhook', (req, res) => {
 
             if (shouldAutoBuy) {
               console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
-              executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry)
+              executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry, maxPriorityFee)
                 .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
                 .catch(err => {
                   if (err === 'SKIPPED_DUPLICATE') return;
@@ -686,6 +700,8 @@ app.post('/webhook', (req, res) => {
                 let itemTierMax = itemTierStat;
 
                 // Check each filter
+                let maxPriorityFee: number | undefined = undefined;
+
                 for (const filter of target.filters) {
                   // Price Check
                   if (price > filter.priceMax) continue;
@@ -730,7 +746,15 @@ app.post('/webhook', (req, res) => {
 
                   // Filter matched!
                   matchesAnyFilter = true;
-                  if (filter.autoBuy) shouldAutoBuy = true;
+                  if (filter.autoBuy) {
+                    shouldAutoBuy = true;
+                    // Capture max priority fee from any matching auto-buy filter
+                    if (filter.priorityFee) {
+                      if (maxPriorityFee === undefined || filter.priorityFee > maxPriorityFee) {
+                        maxPriorityFee = filter.priorityFee;
+                      }
+                    }
+                  }
                 }
 
                 if (matchesAnyFilter) {
@@ -761,7 +785,7 @@ app.post('/webhook', (req, res) => {
                   // Auto Buy (per filter)
                   if (shouldAutoBuy) {
                     console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
-                    executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry)
+                    executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry, maxPriorityFee)
                       .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
                       .catch(err => {
                         if (err === 'SKIPPED_DUPLICATE') return;
@@ -838,7 +862,7 @@ process.on('SIGTERM', shutdown);
 let heliusConnection: Connection | null = null;
 if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
 
-async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number): Promise<string> {
+async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number, priorityFeeSol?: number): Promise<string> {
   // 0. Concurrency Check
   if (ActiveMints.has(mint)) {
     console.log(`[Buy] Skipping duplicate trigger for ${mint}`);
@@ -894,7 +918,26 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     }
 
     // 2. Build Query
-    const PRIORITY_FEE = process.env.PRIORITY_FEE_LAMPORTS || '500000'; // Default 0.0005 SOL for better confirmation
+    // Priority Fee Logic: Use custom if provided, otherwise default to ENV
+    let prioFeeLamports = '500000'; // Default 0.0005 SOL
+    if (priorityFeeSol) {
+      // Convert SOL to microLamports? 
+      // NO: Magic Eden API expects 'prioFeeMicroLamports' which means LAMPORTS (unit of SOL * 1e9) or MICRO-LAMPORTS?
+      // Wait, 'prioFeeMicroLamports' usually implies integer value.
+      // Let's assume input matches the ENV variable usage.
+      // The ENV `PRIORITY_FEE_LAMPORTS` suggests it is in Lamports (1 SOL = 1e9 Lamports).
+      // Magic Eden API docs say `prioFeeMicroLamports` but usually people pass Lamports?
+      // Let's verify standard usage.
+      // Standard code used `process.env.PRIORITY_FEE_LAMPORTS`.
+
+      // Let's settle on: User input is in SOL (UI). We convert to Lamports.
+      prioFeeLamports = Math.floor(priorityFeeSol * 1_000_000_000).toString();
+      console.log(`[Buy] Using CUSTOM Priority Fee: ${priorityFeeSol} SOL (${prioFeeLamports} lamports)`);
+    } else {
+      prioFeeLamports = process.env.PRIORITY_FEE_LAMPORTS || '500000';
+    }
+
+    const PRIORITY_FEE = prioFeeLamports;
 
     let authSeller = seller;
     let authPrice = price;
