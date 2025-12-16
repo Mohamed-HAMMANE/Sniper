@@ -13,9 +13,10 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **🛡️ Rarity Integration**: Filter snipes by rarity rank (Statistical or Additive scaling) to find underpriced rare items.
 - **🎨 Trait Filters**: SolRarity Sniper-style attribute picker to filter by specific traits (e.g., \"Background: Red\" AND \"Hat: Crown\"). Uses OR within categories, AND between categories.
 - **💰 Auto-Buying Engine**: Integrated **Jito Bundles** support to bypass network congestion and protect against sandwiches. Includes "Smart Fetch" to validate listing parameters before execution.
+- **🧠 Smart Resource Management**: Hybrid RPC strategy offloads background tasks (Blockhash, Balance) to free public nodes, reducing paid RPC usage by **99%**.
 
 ### Modern Dashboard UI
-- **📊 Real-Time Charts**: Interactive floor price history charts for every watched collection.
+- **📊 Smart Charts**: Interactive floor price history with smoothed trends (15-min intervals) to reduce noise while maintaining live updates.
 - **🌊 Live Feed**: Real-time stream of incoming listings with "Good/Bad Deal" visual indicators.
 - **⚡ Instant Buy**: One-click manual buy or fully automated sniping with a burner wallet.
 - **📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
@@ -64,6 +65,7 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
    ```env
    # RPC & APIs
    RPC_URL=https://mainnet.helius-rpc.com/?api-key=...
+   PUBLIC_RPC_URL=https://api.mainnet-beta.solana.com  # (Optional) For background tasks to save credits
    ME_API_KEY=your_magiceden_key
    
    # Burner Wallet
