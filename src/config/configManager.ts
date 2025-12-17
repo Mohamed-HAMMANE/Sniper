@@ -31,11 +31,8 @@ export class ConfigManager {
         return parsed;
       }
     } catch (error) {
-      console.error('Config file corrupted or invalid, resetting to defaults.');
-      // Auto-repair
-      try {
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify({ targets: [] }, null, 2));
-      } catch (e) { }
+      // User requested no logging and no auto-repair.
+      // Silently fall back to default empty config in-memory.
     }
 
     // Return default config
