@@ -569,7 +569,7 @@ app.post('/webhook', (req, res) => {
                 // Auto Buy (per filter)
                 if (shouldAutoBuy) {
                   console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
-                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0)
+                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0, undefined, true)
                     .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
                     .catch(err => {
                       if (err === 'SKIPPED_DUPLICATE') return;
@@ -891,7 +891,7 @@ process.on('SIGTERM', shutdown);
 let heliusConnection: Connection | null = null;
 if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
 
-async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number, priorityFeeSol?: number): Promise<string> {
+async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number, priorityFeeSol?: number, verifyPrice: boolean = false): Promise<string> {
   // 0. Concurrency Check
   if (ActiveMints.has(mint)) {
     console.log(`[Buy] Skipping duplicate trigger for ${mint}`);
@@ -974,9 +974,11 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     let authTokenATA = sellerATA;
     let authAuctionHouse = auctionHouse;
 
-    // FALLBACK: If we don't know the seller (e.g. Manual Buy from UI where seller was Unknown), OR missing Auction House, we MUST fetch.
-    if (!seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown' || !authAuctionHouse) {
-      console.log('[Buy] Missing Seller/ATA/AH info. Falling back to Smart Fetch...');
+    // DECISION: Verify Price if requested OR if essential data is missing
+    const needsVerification = verifyPrice || !seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown' || !authAuctionHouse;
+
+    if (needsVerification) {
+      console.log(`[Buy] Verification Required (Flag: ${verifyPrice}). Fetching details from Magic Eden...`);
 
       const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
       const detailsResp = await fetch(detailsUrl, {
@@ -998,7 +1000,14 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       authPrice = best.price;
       authAuctionHouse = best.auctionHouse || auctionHouse;
 
-      console.log(`[Buy] Fallback resolved: Seller=${authSeller}, Price=${authPrice}`);
+      console.log(`[Buy] Verified Data: Seller=${authSeller}, Price=${authPrice}`);
+
+      // SECURITY CHECK: Fund Safety
+      // If the real price is higher than the expected price (from webhook), we must ABORT.
+      // This allows a tiny tolerance for floating point math, but blocks "0.001 vs 10" bugs.
+      if (authPrice > price + 0.000001) {
+        throw new Error(`Price Mismatch! Expected ${price} SOL, but Real Price is ${authPrice} SOL. Aborting to save funds.`);
+      }
     } else {
       console.log(`[Buy] OPTIMISTIC MODE: Using Webhook data: Price=${authPrice}, Seller=${authSeller}`);
     }
