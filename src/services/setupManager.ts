@@ -349,7 +349,8 @@ export class SetupManager {
                         transactionTypes: ['ANY'], // Raw webhook requires broadly compatible types
                         accountAddresses: updatedMints,
                         webhookType: 'raw', // Changed from 'enhanced' for speed
-                        txnStatus: 'success' // Only successful txns
+                        txnStatus: 'success', // Only successful txns
+                        authHeader: process.env.HELIUS_AUTH_SECRET // <--- ADDED SECURITY HEADER
                     })
                 });
 
@@ -364,7 +365,8 @@ export class SetupManager {
                         transactionTypes: ['ANY'],
                         accountAddresses: newMints,
                         webhookType: 'raw',
-                        txnStatus: 'success'
+                        txnStatus: 'success',
+                        authHeader: process.env.HELIUS_AUTH_SECRET // <--- ADDED SECURITY HEADER
                     })
                 });
             }

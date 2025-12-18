@@ -24,6 +24,49 @@ const ActiveMints = new Set<string>();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ==========================================
+// 🛡️ SECURITY MIDDLEWARE (Dual-Gate)
+// ==========================================
+app.use((req, res, next) => {
+  // 1. High-Speed Gate: Helius Webhooks
+  if (req.path === '/webhook') {
+    const heliusSecret = process.env.HELIUS_AUTH_SECRET;
+
+    // If no secret is set in .env, warn but allow (or fail safe: block)
+    // Here we fail safe: if logic demands security, we block if not configured.
+    // But for ease of setup, if env is missing, we might skip. 
+    // SAFEST: Block if secret exists and doesn't match.
+    if (heliusSecret) {
+      const authHeader = req.headers['authorization'];
+      if (authHeader !== heliusSecret) {
+        console.log(`[Security] Blocked unauthorized webhook request from ${req.ip}`);
+        return res.status(403).send('Forbidden');
+      }
+    }
+    return next(); // Fast pass for valid webhooks
+  }
+
+  // 2. Restricted Gate: UI & API (Basic Auth)
+  const authUser = process.env.AUTH_USER;
+  const authPass = process.env.AUTH_PASSWORD;
+
+  if (authUser && authPass) {
+    const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+    const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+    if (login && password && login === authUser && password === authPass) {
+      return next(); // Access Granted
+    }
+
+    // Force Browser Login Popup
+    res.set('WWW-Authenticate', 'Basic realm="NFT Sniper PRO Access"');
+    return res.status(401).send('Authentication required.');
+  }
+
+  // If no auth configured in .env, proceed (Development mode)
+  next();
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
