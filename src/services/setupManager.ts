@@ -4,13 +4,6 @@ import * as path from 'path';
 import { CollectionService } from './collectionService';
 import { SSEBroadcaster } from '../api/sseEndpoint';
 
-interface PreviewData {
-    name: string;
-    image: string;
-    type: 'standard' | 'core';
-    address: string;
-}
-
 export class SetupManager {
     private apiKey: string;
     private rpcUrl: string;
@@ -26,52 +19,7 @@ export class SetupManager {
         this.broadcaster = broadcaster;
     }
 
-    /**
-     * Preview: Fetches 1 item to detect Name, Image, Type
-     */
-    public async previewCollection(address: string): Promise<PreviewData> {
-        try {
-            console.log(`[SetupManager] Previewing address: ${address}`);
 
-            // Fetch only 1 item
-            // Use RPC_URL directly
-            const response = await fetch(this.rpcUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: 'preview',
-                    method: 'getAssetsByGroup',
-                    params: {
-                        groupKey: 'collection',
-                        groupValue: address,
-                        page: 1,
-                        limit: 1
-                    }
-                }),
-            });
-
-            const data: any = await response.json();
-            const result = data.result;
-            if (!result || !result.items || result.items.length === 0) {
-                throw new Error('No items found for this collection address');
-            }
-
-            const item = result.items[0];
-            const nameFull = item.content.metadata.name || 'Unknown Collection';
-            // Simple logic: "Goblin #342" -> "Goblin"
-            const name = nameFull.split('#')[0].trim();
-
-            const image = item.content.files?.[0]?.uri || item.content.links?.image || '';
-            const type = item.interface === 'MplCore' ? 'core' : 'standard';
-
-            return { name, image, type, address };
-
-        } catch (error: any) {
-            console.error('[SetupManager] Preview failed:', error);
-            throw new Error(`Preview failed: ${error.message}`);
-        }
-    }
 
 
     /**

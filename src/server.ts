@@ -248,17 +248,7 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
-// Setup: Preview
-app.post('/api/setup/preview', async (req, res) => {
-  try {
-    const { address } = req.body;
-    if (!address) return res.status(400).json({ error: 'Missing address' });
-    const data = await setupManager.previewCollection(address);
-    res.json(data);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
+
 
 // Setup: Init
 app.post('/api/setup/init', async (req, res) => {

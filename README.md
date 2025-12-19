@@ -8,7 +8,7 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 
 ### Core Sniping & Monitoring
 - **⚡ Webhook-Driven Speed**: Uses Helius Webhooks to detect listings the moment they hit the blockchain, abandoning slow polling methods.
-- **🎯 Multi-Target Support**: Monitor multiple collections simultaneously with unique constraints (Max Price, Min Rarity) for each.
+- **🎯 Multi-Target Support**: Monitor multiple collections simultaneously. **Advanced Filtering**: Apply multiple strategy filters per collection (e.g., "Snipe Rares < 50 SOL" AND "Snipe Floor < 10 SOL").
 - **🧠 Advanced Parsing**: Custom decoder for **Magic Eden V2** instructions, detecting listings even when standard parsers return "Unknown" transaction types.
 - **🛡️ Rarity Integration**: Filter snipes by rarity rank (Statistical or Additive scaling) to find underpriced rare items.
 - **🎨 Trait Filters**: SolRarity Sniper-style attribute picker to filter by specific traits (e.g., \"Background: Red\" AND \"Hat: Crown\"). Uses OR within categories, AND between categories.
@@ -115,17 +115,50 @@ Deploy this application to a high-performance Cloud VPS (Virtual Private Server)
 Targets are managed via the UI, but persisted in `config.json`.
 Wallet settings are managed in `.env`.
 
+## 🛡️ Security
+
+This bot includes two layers of security for use on public cloud servers:
+
+1.  **Webhook Security**:
+    *   Set `HELIUS_AUTH_SECRET` in your `.env` file (e.g., `HELIUS_AUTH_SECRET=my-super-secret-token`).
+    *   Add this same string to the `authHeader` field in your Helius Webhook configuration.
+    *   The bot will verify this header on every incoming webhook and reject unauthorized requests.
+
+2.  **Dashboard Access Control**:
+    *   Set `AUTH_USER` and `AUTH_PASSWORD` in your `.env` file to protect the UI.
+    *   Example:
+        ```env
+        AUTH_USER=admin
+        AUTH_PASSWORD=password123
+        ```
+    *   Accessing the dashboard will now require Basic Auth credentials.
+
 ## 🔌 API Endpoints
 
+
 - `GET /api/config`: Current state of targets.
+- `GET /api/stats`: System health stats.
+- `GET /api/history/:symbol`: Get floor price history chart data.
+- `GET /api/traits/:symbol`: Get available traits for a collection.
+- `GET /api/listings-stream`: SSE endpoint for frontend updates.
+
+**Target Management**
 - `POST /api/target`: Add a new collection to watch.
 - `DELETE /api/target/:symbol`: Stop watching a collection.
-- `GET /api/history/:symbol`: Get floor price history chart data.
-- `GET /api/listings-stream`: SSE endpoint for frontend updates.
+- `PUT /api/target/:symbol/collapse`: Save UI collapse state.
+
+**Filter Management**
+- `POST /api/target/:symbol/filter`: Add a new filter to a collection.
+- `PUT /api/target/:symbol/filter/:filterId`: Update a specific filter.
+- `DELETE /api/target/:symbol/filter/:filterId`: Remove a specific filter.
+
+**Operations**
 - `POST /api/buy`: Trigger manual buy.
 - `POST /api/feed/clear`: Clear the current listings feed.
-- `GET /api/traits/:symbol`: Get available traits for a collection (for Trait Filters UI).
-- `GET /api/stats`: System health stats.
+- `POST /api/balance/refresh`: Force refresh of burner wallet balance.
+
+**Setup**
+- `POST /api/setup/init`: Initialize a new collection (fetch metadata/rarity).
 
 ## 🐛 Troubleshooting
 
