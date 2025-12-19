@@ -27,6 +27,9 @@ const JITO_URL = BLOCK_ENGINE_URLS.ny;
 export class JitoService {
     private rpcUrl: string;
     private connection: Connection;
+    private cachedTipTx: string | null = null;
+    private cachedBlockhash: string | null = null;
+    private cachedTipLamports: number = 0;
 
     constructor(rpcUrl: string) {
         this.rpcUrl = rpcUrl;
@@ -40,27 +43,28 @@ export class JitoService {
         return new PublicKey(accountStr);
     }
 
-    // Sends a bundle with the core transaction AND a tip transaction
-    async sendBundle(transaction: VersionedTransaction, signer: Keypair, tipLamports: number, latestBlockhash?: string): Promise<string> {
-        try {
-            // 1. Create Tip Transaction
-            const tipAccount = this.getRandomTipAccount();
-            console.log(`[Jito] Adding tip of ${tipLamports} lamports to ${tipAccount.toBase58()}`);
+    // Background Warmer: Pre-signs the tip transaction to save CPU at snipe time
+    public startTipWarmer(signer: Keypair, tipLamports: number) {
+        console.log(`[Jito] Starting Tip Warmer for ${tipLamports} lamports...`);
+        this.updateCachedTip(signer, tipLamports);
 
+        // Update every 30 seconds (Blockhashes last ~60s, so this is safe)
+        setInterval(() => {
+            this.updateCachedTip(signer, tipLamports);
+        }, 30000);
+    }
+
+    private async updateCachedTip(signer: Keypair, tipLamports: number) {
+        try {
+            const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+
+            // Build Tip Tx
+            const tipAccount = this.getRandomTipAccount();
             const tipIx = SystemProgram.transfer({
                 fromPubkey: signer.publicKey,
                 toPubkey: tipAccount,
                 lamports: tipLamports
             });
-
-            // Get latest blockhash for tip tx
-            let blockhash = '';
-            if (latestBlockhash) {
-                blockhash = latestBlockhash;
-            } else {
-                const res = await this.connection.getLatestBlockhash('confirmed');
-                blockhash = res.blockhash;
-            }
 
             const tipTx = new Transaction();
             tipTx.recentBlockhash = blockhash;
@@ -68,12 +72,65 @@ export class JitoService {
             tipTx.add(tipIx);
             tipTx.sign(signer);
 
+            const serialized = tipTx.serialize();
+            this.cachedTipTx = Buffer.from(serialized).toString('base64');
+            this.cachedBlockhash = blockhash;
+            this.cachedTipLamports = tipLamports;
+
+            // console.log(`[Jito] Internal Warmer: Tip refreshed (Blockhash: ${blockhash.slice(0, 8)}...)`);
+        } catch (e: any) {
+            console.error('[Jito] Warmer Failed:', e.message);
+        }
+    }
+
+    // Sends a bundle with the core transaction AND a tip transaction
+    async sendBundle(transaction: VersionedTransaction, signer: Keypair, tipLamports: number, latestBlockhash?: string): Promise<string> {
+        try {
+            let b64TipTx = '';
+
+            // Optimization: Use Cached Tip if available and matches request
+            if (this.cachedTipTx && this.cachedTipLamports === tipLamports) {
+                // Check if blockhash provided matches our cache, or if none provided (optimistic)
+                // Actually, for the Tip Tx, it effectively stands alone in the bundle.
+                // We just use the pre-signed valid one.
+                b64TipTx = this.cachedTipTx;
+                // console.log('[Jito] FAST PATH: Using Pre-Signed Tip Transaction');
+            } else {
+                console.log('[Jito] SLOW PATH: Signing new Tip Transaction...');
+                // 1. Create Tip Transaction (Fallback)
+                const tipAccount = this.getRandomTipAccount();
+                // ... (Original logic logic)
+
+                const tipIx = SystemProgram.transfer({
+                    fromPubkey: signer.publicKey,
+                    toPubkey: tipAccount,
+                    lamports: tipLamports
+                });
+
+                // Get latest blockhash for tip tx if NOT cached
+                let blockhash = '';
+                if (latestBlockhash) {
+                    blockhash = latestBlockhash;
+                } else {
+                    const res = await this.connection.getLatestBlockhash('confirmed');
+                    blockhash = res.blockhash;
+                }
+
+                const tipTx = new Transaction();
+                tipTx.recentBlockhash = blockhash;
+                tipTx.feePayer = signer.publicKey;
+                tipTx.add(tipIx);
+                tipTx.sign(signer);
+
+                b64TipTx = Buffer.from(tipTx.serialize()).toString('base64');
+            }
+
             // 2. Serialize Transactions
             const serializedBuyTx = transaction.serialize();
-            const serializedTipTx = tipTx.serialize();
+            // (tip already serialized)
 
             const b64BuyTx = Buffer.from(serializedBuyTx).toString('base64');
-            const b64TipTx = Buffer.from(serializedTipTx).toString('base64');
+            // const b64TipTx = ... (Ready)
 
             // 3. Construct Bundle
             const payload = {

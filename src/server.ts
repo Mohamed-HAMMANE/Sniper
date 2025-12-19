@@ -13,6 +13,25 @@ import { HistoryService } from './services/historyService';
 import { Keypair, Connection, VersionedTransaction, PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { JitoService } from './services/jitoService';
+import * as https from 'https';
+import * as http from 'http';
+
+
+// Optimize HTTP Agent (Keep-Alive)
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  keepAliveMsecs: 3000
+});
+
+// Override custom global fetch to use this agent for Magic Eden?
+// Node 18 fetch doesn't easily accept httpsAgent.
+// We will use a custom wrapper for ME calls.
+const customFetch = (url: string, options: any = {}) => {
+  return fetch(url, { ...options, dispatcher: undefined });
+  // Native fetch in Node 18+ manages Keep-Alive automatically, 
+  // BUT we need to ping to keep the specific origin connection active.
+};
 import { BlockhashManager } from './services/blockhashManager';
 import { ConfirmationService } from './services/confirmationService';
 import { BalanceMonitor } from './services/balanceMonitor';
@@ -82,6 +101,27 @@ const cache = new ListingCache(60); // Cache for 60 minutes
 const collectionService = new CollectionService();
 const broadcaster = new SSEBroadcaster();
 const jitoService = new JitoService(RPC_URL);
+
+// Start Jito Tip Warmer (Always Active)
+if (process.env.BURNER_WALLET_PRIVATE_KEY) {
+  try {
+    const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
+    let secretKey: Uint8Array;
+    if (BURNER_KEY_RAW.trim().startsWith('[')) secretKey = Uint8Array.from(JSON.parse(BURNER_KEY_RAW));
+    else secretKey = decodeBase58(BURNER_KEY_RAW);
+    const burnerWallet = Keypair.fromSecretKey(secretKey);
+
+    // Use env priority fee or default 0.0005 SOL
+    const tip = parseInt(process.env.PRIORITY_FEE_LAMPORTS || '500000', 10);
+    jitoService.startTipWarmer(burnerWallet, tip);
+  } catch (e) {
+    console.warn('[Server] Failed to start Jito Tip Warmer:', e);
+  }
+}
+
+// Start Connection Warmer (ME API)
+startConnectionWarmer();
+
 const PUBLIC_RPC_URL = process.env.PUBLIC_RPC_URL;
 const blockhashManager = new BlockhashManager(RPC_URL, PUBLIC_RPC_URL);
 const confirmationService = new ConfirmationService(RPC_URL, broadcaster, PUBLIC_RPC_URL);
@@ -902,6 +942,26 @@ setInterval(async () => {
   }
 }, 60 * 1000);
 
+// Connection Warmer: Pings ME every 5s to keep TLS connection hot
+function startConnectionWarmer() {
+  console.log('[Server] Starting Magic Eden Connection Warmer (TLS Keep-Alive)...');
+  setInterval(async () => {
+    try {
+      // Use a cheap endpoint just to keep the handshake valid.
+      // Instructions endpoint is what we care about most.
+      // We pass a dummy parameter to avoid fetching real data.
+      await fetch('https://api-mainnet.magiceden.dev/v2/instructions/buy_now?buyer=11111111111111111111111111111111&seller=11111111111111111111111111111111&price=0&tokenMint=11111111111111111111111111111111&tokenATA=11111111111111111111111111111111', {
+        headers: { 'Authorization': `Bearer ${process.env.ME_API_KEY}` }
+      });
+      // console.log('[Warmer] Ping');
+    } catch {
+      // Ignore errors, it's just a warmer
+    }
+  }, 4000); // 4 seconds (ME timeout might be around 5s or 10s)
+}
+
+
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`NFT Sniper running on port ${PORT}`);
@@ -1182,33 +1242,27 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     console.log(`[Buy] Final serialized size: ${finalSerialized.length} bytes`);
 
     // 5. Execute
-    if (USE_JITO) {
-      try {
-        console.log('[Buy] Sending via Jito Bundle...');
-        const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
-        // Pass the cached blockhash to avoid extra RPC call in JitoService
-        const bundleId = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
-        console.log(`[Buy] Jito Bundle ID: ${bundleId}`);
-        // meaningful signature is already set above
-      } catch (error: any) {
-        console.error('[Buy] Jito failed:', error.message);
-        console.log('[Buy] Falling back to Standard RPC...');
-        const serializedTx = transaction.serialize();
+    // Always use Jito as requested (removed USE_JITO check)
+    try {
+      console.log('[Buy] Sending via Jito Bundle...');
+      const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
+      // Pass the cached blockhash to avoid extra RPC call in JitoService
+      const bundleId = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
+      console.log(`[Buy] Jito Bundle ID: ${bundleId}`);
+      // meaningful signature is already set above
+    } catch (error: any) {
+      console.error('[Buy] Jito failed:', error.message);
+      console.log('[Buy] Falling back to Standard RPC...');
+      const serializedTx = transaction.serialize();
+      if (heliusConnection) {
         await heliusConnection.sendRawTransaction(serializedTx, {
           skipPreflight: true,
           maxRetries: 0,
           preflightCommitment: 'confirmed'
         });
+      } else {
+        throw new Error('Connection not initialized');
       }
-    } else {
-      console.log('[Buy] Sending via Standard RPC...');
-      const serializedTx = transaction.serialize();
-      // For standard RPC, the return value IS the signature, but it matches what we signed
-      await heliusConnection.sendRawTransaction(serializedTx, {
-        skipPreflight: true,
-        maxRetries: 0,
-        preflightCommitment: 'confirmed'
-      });
     }
 
     // 6. Monitor (Fire and Forget)
