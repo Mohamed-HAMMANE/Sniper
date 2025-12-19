@@ -105,10 +105,11 @@ Since this bot relies on push notifications from the blockchain, you must connec
 **Critical for Success:** 
 Running this locally with Ngrok adds **4-8 seconds** of latency due to the tunnel round-trip. In the sniping game, this is too slow.
 
-**Recommendation:**
-Deploy this application to a high-performance Cloud VPS (Virtual Private Server) to achieve sub-second reaction times.
-- **Provider**: Vultr, DigitalOcean, or AWS (US-East Region recommended for proximity to Solana RPCs).
-- **Benefit**: Removes the Ngrok bottleneck, reducing latency from ~6000ms to <200ms.
+**Reference Setup (Production):**
+This project is currently deployed on a **Vultr** VPS in **New Jersey (NJ)**.
+- **Why NJ?**: Strategic proximity to Helius/Jito nodes.
+- **Hardware**: 1 vCPU / 1GB RAM (Proven stable for monitoring ~10 collections).
+- **Benefit**: **Reliability**. Ensures 24/7 uptime and eliminates home internet connection drops/interruptions.
 
 ## ⚙️ Configuration
 
