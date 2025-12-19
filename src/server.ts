@@ -339,10 +339,10 @@ app.post('/webhook', (req, res) => {
         if (priceSol <= 0) continue;
 
         // Latency Check
-        if (event.timestamp) {
+        /*if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
           console.log(`[Latency] ${latency}ms delay from Chain to Localhost (Type: ${event.type})`);
-        }
+        }*/
 
         /*/ Internal Processing Check
         const start = process.hrtime();*/
@@ -501,10 +501,10 @@ app.post('/webhook', (req, res) => {
       } else if ((event.type === 'UNKNOWN' || event.type === 'TRANSACTION') && event.accountData) {
 
         // Latency Check for UNKNOWN/RAW events
-        if (event.timestamp) {
+        /*if (event.timestamp) {
           const latency = Date.now() - (event.timestamp * 1000);
           console.log(`[Latency] (${event.type}) ${latency}ms delay from Chain to Localhost`);
-        }
+        }*/
 
         /*/ Internal Processing Check
         const start = process.hrtime();*/
