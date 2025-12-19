@@ -13,25 +13,22 @@ import { HistoryService } from './services/historyService';
 import { Keypair, Connection, VersionedTransaction, PublicKey, Transaction } from '@solana/web3.js';
 import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { JitoService } from './services/jitoService';
-import * as https from 'https';
-import * as http from 'http';
+import { Agent, setGlobalDispatcher } from 'undici';
 
-
-// Optimize HTTP Agent (Keep-Alive)
-const httpsAgent = new https.Agent({
-  keepAlive: true,
-  maxSockets: 50,
-  keepAliveMsecs: 3000
+// 1. GLOBAL HTTP OPTIMIZATION
+// This forces ALL fetch calls in the app to share this persistent connection pool.
+const agent = new Agent({
+  connect: {
+    keepAlive: true,
+    timeout: 60000
+  },
+  pipelining: 1,
+  connections: 100
 });
+setGlobalDispatcher(agent);
 
-// Override custom global fetch to use this agent for Magic Eden?
-// Node 18 fetch doesn't easily accept httpsAgent.
-// We will use a custom wrapper for ME calls.
-const customFetch = (url: string, options: any = {}) => {
-  return fetch(url, { ...options, dispatcher: undefined });
-  // Native fetch in Node 18+ manages Keep-Alive automatically, 
-  // BUT we need to ping to keep the specific origin connection active.
-};
+// Now your existing 'startConnectionWarmer' will actually warm the pool 
+// that 'executeBuyTransaction' uses.
 import { BlockhashManager } from './services/blockhashManager';
 import { ConfirmationService } from './services/confirmationService';
 import { BalanceMonitor } from './services/balanceMonitor';
@@ -985,93 +982,45 @@ let heliusConnection: Connection | null = null;
 if (RPC_URL) heliusConnection = new Connection(RPC_URL, 'confirmed');
 
 async function executeBuyTransaction(mint: string, price: number, seller: string, tokenATA?: string, auctionHouse?: string, sellerExpiry?: number, priorityFeeSol?: number, verifyPrice: boolean = false): Promise<string> {
-  // 0. Concurrency Check
-  if (ActiveMints.has(mint)) {
-    console.log(`[Buy] Skipping duplicate trigger for ${mint}`);
-    return 'SKIPPED_DUPLICATE';
-  }
+  if (ActiveMints.has(mint)) return 'SKIPPED_DUPLICATE';
   ActiveMints.add(mint);
 
   try {
-    // 0.1 Balance Check
+    // 0. Balance Check (Safety First)
     const balance = balanceMonitor.getBalance();
-    if (balance < price) {
-      throw new Error(`Insufficient funds: ${balance.toFixed(3)} SOL < ${price} SOL`);
+    // Allow a small buffer (0.02 SOL) for fees themselves
+    if (balance < price + 0.02) {
+      throw new Error(`Insufficient funds: ${balance.toFixed(3)} SOL < ${price} + 0.02 SOL`);
     }
 
     const ME_API_KEY = process.env.ME_API_KEY;
     const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
     const BURNER_ADDRESS = process.env.BURNER_WALLET_ADDRESS;
-    const USE_JITO = process.env.USE_JITO === 'true';
 
-    if (!ME_API_KEY || !BURNER_KEY_RAW || !BURNER_ADDRESS || !heliusConnection) throw new Error('Server misconfigured');
+    if (!ME_API_KEY || !BURNER_KEY_RAW || !BURNER_ADDRESS) throw new Error('Server misconfigured');
 
     let secretKey: Uint8Array;
     if (BURNER_KEY_RAW.trim().startsWith('[')) secretKey = Uint8Array.from(JSON.parse(BURNER_KEY_RAW));
     else secretKey = decodeBase58(BURNER_KEY_RAW);
 
     const burnerWallet = Keypair.fromSecretKey(secretKey);
-    const buyerAddress = BURNER_ADDRESS;
 
-    // 1. Prepare ATA if missing
-    let sellerATA = tokenATA;
-    if (!sellerATA) {
-      const mintPubkey = new PublicKey(mint);
+    // 1. OPTIMISTIC DEFAULTS (The "Speed Hacks")
+    // If AH is missing, assume Canonical (Standard ME V2) to avoid API fetch
+    const CANONICAL_AH = 'E8cU1WiRWjanGxmn96ewBgk9vPTcL6AEZ1t6F6fkgUWe';
+    let authAuctionHouse = auctionHouse || CANONICAL_AH;
 
-      // Check local collection data for MPL Core flag (0ms latency)
-      const symbol = collectionService.findCollectionForMint(mint);
-      let isCore = false;
-
-      if (symbol) {
-        const col = collectionService.getCollection(symbol);
-        if (col && col.type === 'core') {
-          isCore = true;
-        }
-      }
-
-      if (isCore) {
-        console.log('[Buy] Local DB thinks this is MPL Core. Skipping ATA derivation.');
-        sellerATA = seller;
-      } else {
-        // Standard SPL Token
-        const sellerPubkey = new PublicKey(seller);
-        sellerATA = (await getAssociatedTokenAddress(mintPubkey, sellerPubkey)).toBase58();
-      }
-    }
-
-    // 2. Build Query
-    // Priority Fee Logic: Use custom if provided, otherwise default to ENV
-    let prioFeeLamports = '500000'; // Default 0.0005 SOL
-    if (priorityFeeSol) {
-      // Convert SOL to microLamports? 
-      // NO: Magic Eden API expects 'prioFeeMicroLamports' which means LAMPORTS (unit of SOL * 1e9) or MICRO-LAMPORTS?
-      // Wait, 'prioFeeMicroLamports' usually implies integer value.
-      // Let's assume input matches the ENV variable usage.
-      // The ENV `PRIORITY_FEE_LAMPORTS` suggests it is in Lamports (1 SOL = 1e9 Lamports).
-      // Magic Eden API docs say `prioFeeMicroLamports` but usually people pass Lamports?
-      // Let's verify standard usage.
-      // Standard code used `process.env.PRIORITY_FEE_LAMPORTS`.
-
-      // Let's settle on: User input is in SOL (UI). We convert to Lamports.
-      prioFeeLamports = Math.floor(priorityFeeSol * 1_000_000_000).toString();
-      console.log(`[Buy] Using CUSTOM Priority Fee: ${priorityFeeSol} SOL (${prioFeeLamports} lamports)`);
-    } else {
-      prioFeeLamports = process.env.PRIORITY_FEE_LAMPORTS || '500000';
-    }
-
-    const PRIORITY_FEE = prioFeeLamports;
+    // If we have seller + price, FORCE SKIP verification unless explicitly told otherwise
+    const needsVerification = verifyPrice || !seller || seller === 'Unknown';
 
     let authSeller = seller;
     let authPrice = price;
     let authExpiry = sellerExpiry || 0;
-    let authTokenATA = sellerATA;
-    let authAuctionHouse = auctionHouse;
+    let authTokenATA = tokenATA;
 
-    // DECISION: Verify Price if requested OR if essential data is missing
-    const needsVerification = verifyPrice || !seller || seller === 'Unknown' || !authTokenATA || authTokenATA === 'Unknown' || !authAuctionHouse;
-
+    // 2. VERIFICATION (Only run if we are blind)
     if (needsVerification) {
-      console.log(`[Buy] Verification Required (Flag: ${verifyPrice}). Fetching details from Magic Eden...`);
+      console.log(`[Buy] ⚠️ Data missing. Fetching from ME (Cost: ~500ms)...`);
 
       const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
       const detailsResp = await fetch(detailsUrl, {
@@ -1089,170 +1038,115 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
       authSeller = best.seller;
       authExpiry = (best.expiry === -1) ? 0 : (best.expiry || 0);
-      authTokenATA = best.tokenAddress || undefined; // Let it be re-derived or used
+      authTokenATA = best.tokenAddress || undefined;
       authPrice = best.price;
-      authAuctionHouse = best.auctionHouse || auctionHouse;
+      authAuctionHouse = best.auctionHouse || authAuctionHouse;
 
-      console.log(`[Buy] Verified Data: Seller=${authSeller}, Price=${authPrice}`);
-
-      // SECURITY CHECK: Fund Safety
-      // If the real price is higher than the expected price (from webhook), we must ABORT.
-      // This allows a tiny tolerance for floating point math, but blocks "0.001 vs 10" bugs.
+      // Safety check
       if (authPrice > price + 0.000001) {
-        throw new Error(`Price Mismatch! Expected ${price} SOL, but Real Price is ${authPrice} SOL. Aborting to save funds.`);
+        throw new Error(`Price Mismatch! Expected ${price} SOL, but Real Price is ${authPrice} SOL.`);
       }
-    } else {
-      console.log(`[Buy] OPTIMISTIC MODE: Using Webhook data: Price=${authPrice}, Seller=${authSeller}`);
     }
 
-    /*
-    // OPTIMIZATION: Commented out "Smart Fetch" for speed. Trusting Webhook Data.
-    // ... (Original commented out code removed for brevity as we integrated it above)
-    */
+    // 3. PRIORITY FEE CORRECTION
+    // User Input: SOL (e.g. 0.0005)
+    // Jito Tip: Lamports (e.g. 500,000)
+    // ME Priority Fee: MicroLamports/CU (e.g. 100,000)
 
-    // Re-derive ATA if we have a seller now but no ATA (and it's not Core)
+    // Default Jito Tip: 0.0005 SOL
+    const jitoTipLamports = priorityFeeSol
+      ? Math.floor(priorityFeeSol * 1_000_000_000)
+      : parseInt(process.env.PRIORITY_FEE_LAMPORTS || '500000', 10);
+
+    // Default ME Priority Fee: 100,000 MicroLamports (Standard High)
+    // We don't map this 1:1 to Jito Tip because they are different units.
+    const meMicroLamports = '100000';
+
+    // 4. DERIVE ATA (Local Calculation - Fast)
     if (!authTokenATA && authSeller && authSeller !== 'Unknown') {
-      // Check if Core again locally to be safe or reuse existing var if available in scope
       const symbol = collectionService.findCollectionForMint(mint);
-      let isCoreLocal = false;
-      if (symbol) {
-        const col = collectionService.getCollection(symbol);
-        if (col && col.type === 'core') isCoreLocal = true;
-      }
+      const col = symbol ? collectionService.getCollection(symbol) : null;
 
-      if (!isCoreLocal) {
+      if (col?.type === 'core') {
+        authTokenATA = authSeller; // MPL Core
+      } else {
+        // SPL Token
         const sellerPubkey = new PublicKey(authSeller);
         const mintPubkey = new PublicKey(mint);
         authTokenATA = (await getAssociatedTokenAddress(mintPubkey, sellerPubkey)).toBase58();
-      } else {
-        authTokenATA = authSeller;
       }
     }
 
-    // Build query with authoritative data
+    // 5. FETCH TRANSACTION (Hot Connection)
     const query = new URLSearchParams({
-      buyer: buyerAddress,
+      buyer: BURNER_ADDRESS!,
       seller: authSeller,
       tokenMint: mint,
-      tokenATA: authTokenATA as string,
+      tokenATA: authTokenATA!,
       price: authPrice.toString(),
       sellerExpiry: authExpiry.toString(),
-      prioFeeMicroLamports: PRIORITY_FEE
+      prioFeeMicroLamports: meMicroLamports, // Correct unit
+      auctionHouseAddress: authAuctionHouse
     });
 
-    if (authAuctionHouse) {
-      query.append('auctionHouseAddress', authAuctionHouse);
-    }
-
     const meUrl = `https://api-mainnet.magiceden.dev/v2/instructions/buy_now?${query.toString()}`;
-    console.log(`[Buy] Fetching tx from: ${meUrl}`);
+    // console.log(`[Buy] Fetching...`); 
 
+    // No explicit agent needed here if setGlobalDispatcher is used!
     const meResp = await fetch(meUrl, {
-      headers: { 'Authorization': `Bearer ${ME_API_KEY}`, 'Content-Type': 'application/json' }
+      headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
     });
 
     if (!meResp.ok) {
-      const errText = await meResp.text();
-      throw new Error(`ME API Failed: ${errText}`);
+      throw new Error(`ME API Failed: ${await meResp.text()}`);
     }
 
     const data: any = await meResp.json();
-
-    // Debug: Log response structure
-    console.log('[Buy] ME Response keys:', Object.keys(data));
-    if (data.v0) console.log('[Buy] v0 type:', typeof data.v0, 'isArray:', Array.isArray(data.v0));
-
-    // Handle different response formats - prioritize v0 (compact versioned format)
     let txBuffer: Uint8Array;
 
+    // Handle v0 response
     if (data.v0) {
-      // v0 is the versioned transaction format (compact with address lookup tables)
-      // IMPORTANT: Prioritize txSigned (ME's pre-signed tx) over tx (unsigned)
-      // The tx needs 2 signatures: ME's signature + buyer's signature
-      if (data.v0.txSigned && data.v0.txSigned.data) {
-        // v0.txSigned.data is ALREADY signed by ME - we just add our signature
-        txBuffer = Uint8Array.from(data.v0.txSigned.data);
-        console.log('[Buy] Using v0.txSigned.data array (pre-signed by ME)');
-      } else if (typeof data.v0 === 'string') {
-        txBuffer = Buffer.from(data.v0, 'base64');
-        console.log('[Buy] Using v0 as base64 string');
-      } else if (data.v0.tx && data.v0.tx.data) {
-        // v0.tx.data is UNSIGNED - will fail if 2 sigs required
-        txBuffer = Uint8Array.from(data.v0.tx.data);
-        console.log('[Buy] WARNING: Using v0.tx.data (UNSIGNED) - may fail if 2 sigs needed');
-      } else if (data.v0.data) {
-        txBuffer = Uint8Array.from(data.v0.data);
-        console.log('[Buy] Using v0.data array');
-      } else if (Array.isArray(data.v0)) {
-        txBuffer = Uint8Array.from(data.v0);
-        console.log('[Buy] Using v0 as array');
-      } else {
-        console.log('[Buy] v0 object keys:', Object.keys(data.v0));
-        console.log('[Buy] v0 sample:', JSON.stringify(data.v0).substring(0, 200));
-        throw new Error('Unknown v0 format');
-      }
+      if (data.v0.txSigned && data.v0.txSigned.data) txBuffer = Uint8Array.from(data.v0.txSigned.data);
+      else if (typeof data.v0 === 'string') txBuffer = Buffer.from(data.v0, 'base64');
+      else if (data.v0.tx && data.v0.tx.data) txBuffer = Uint8Array.from(data.v0.tx.data);
+      else if (data.v0.data) txBuffer = Uint8Array.from(data.v0.data);
+      else if (Array.isArray(data.v0)) txBuffer = Uint8Array.from(data.v0);
+      else throw new Error('Unknown v0 format');
     } else if (data.txSigned && data.txSigned.data) {
-      // Array buffer format (fallback)
       txBuffer = Uint8Array.from(data.txSigned.data);
-      console.log('[Buy] Using txSigned.data array');
     } else if (data.tx && typeof data.tx === 'string') {
-      // Base64 string format
       txBuffer = Buffer.from(data.tx, 'base64');
-      console.log('[Buy] Using tx as base64 string');
-    } else if (data.tx && data.tx.data) {
-      // tx.data array format
-      txBuffer = Uint8Array.from(data.tx.data);
-      console.log('[Buy] Using tx.data array');
     } else {
-      console.error('[Buy] Unknown response format:', JSON.stringify(data).substring(0, 500));
-      throw new Error('Invalid response from ME API: Unknown transaction format');
+      throw new Error('Invalid response from ME API');
     }
 
-    console.log(`[Buy] Transaction size: ${txBuffer.length} bytes`);
-
-    // Deserialize
     const transaction = VersionedTransaction.deserialize(txBuffer);
 
-    // Log transaction details for debugging
-    console.log(`[Buy] Transaction signatures needed: ${transaction.message.header.numRequiredSignatures}`);
-    console.log(`[Buy] Transaction has ${transaction.message.compiledInstructions.length} instructions`);
-
-    // 3. Get Blockhash - prefer ME's blockhashData if available (it's matched to the tx)
+    // Blockhash
     let blockhashToUse = '';
     if (data.blockhashData && data.blockhashData.blockhash) {
       blockhashToUse = data.blockhashData.blockhash;
-      console.log(`[Buy] Using ME's blockhash: ${blockhashToUse}`);
     } else {
       const latestBlockhashObj = blockhashManager.getLatestBlockhash();
       if (!latestBlockhashObj) throw new Error('Blockhash not yet available');
       blockhashToUse = latestBlockhashObj.blockhash;
-      console.log(`[Buy] Using cached blockhash: ${blockhashToUse}`);
     }
 
-    // 4. Sign - update blockhash and sign
     transaction.message.recentBlockhash = blockhashToUse;
     transaction.sign([burnerWallet]);
 
-    // Get the actual signature from the signed transaction
     const signature = bs58.encode(transaction.signatures[0]);
-    console.log(`[Buy] Transaction Signature: ${signature}`);
+    console.log(`[Buy] Transaction Signature: ${signature} (Jito Tip: ${jitoTipLamports})`);
 
-    // Log final serialized size
-    const finalSerialized = transaction.serialize();
-    console.log(`[Buy] Final serialized size: ${finalSerialized.length} bytes`);
-
-    // 5. Execute
-    // Always use Jito as requested (removed USE_JITO check)
+    // JITO EXECUTION
     try {
-      console.log('[Buy] Sending via Jito Bundle...');
-      const tipLamports = parseInt(PRIORITY_FEE, 10) || 100000;
-      // Pass the cached blockhash to avoid extra RPC call in JitoService
-      const bundleId = await jitoService.sendBundle(transaction, burnerWallet, tipLamports, blockhashToUse);
+      console.log(`[Buy] Sending via Jito Bundle (Tip: ${jitoTipLamports})...`);
+      const bundleId = await jitoService.sendBundle(transaction, burnerWallet, jitoTipLamports, blockhashToUse);
       console.log(`[Buy] Jito Bundle ID: ${bundleId}`);
-      // meaningful signature is already set above
     } catch (error: any) {
       console.error('[Buy] Jito failed:', error.message);
       console.log('[Buy] Falling back to Standard RPC...');
+
       const serializedTx = transaction.serialize();
       if (heliusConnection) {
         await heliusConnection.sendRawTransaction(serializedTx, {
@@ -1261,20 +1155,17 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
           preflightCommitment: 'confirmed'
         });
       } else {
-        throw new Error('Connection not initialized');
+        throw new Error('Helius Connection not initialized for fallback');
       }
     }
 
-    // 6. Monitor (Fire and Forget)
+    // Monitor
     confirmationService.monitor(signature, 'Buy Now');
-
-    // 7. Optimistic Balance Update
     balanceMonitor.decreaseBalance(price);
 
     return signature;
 
   } finally {
-    // Release Lock
     ActiveMints.delete(mint);
   }
 }

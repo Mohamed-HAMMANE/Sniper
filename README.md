@@ -72,8 +72,6 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
    BURNER_WALLET_PRIVATE_KEY=[array]
    BURNER_WALLET_ADDRESS=...
    
-   # Jito (Optional but Recommended)
-   USE_JITO=true
    PRIORITY_FEE_LAMPORTS=500000
    ```
 
