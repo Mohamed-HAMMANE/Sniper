@@ -661,8 +661,8 @@ app.post('/webhook', (req, res) => {
         console.log(`[Processing] (UNKNOWN) Logic took ${procTime}ms`);*/
       } else if (event.version !== undefined || event.transaction) {
         // Handle RAW Helius/RPC Transaction
-        const latency = Date.now() - ((event.blockTime || event.timestamp || (Date.now() / 1000)) * 1000);
-        console.log(`[Latency] (RAW) ${latency.toFixed(0)}ms`);
+        //const latency = Date.now() - ((event.blockTime || event.timestamp || (Date.now() / 1000)) * 1000);
+        //console.log(`[Latency] (RAW) ${latency.toFixed(0)}ms`);
 
         // Normalization
         let instructions: any[] = [];
@@ -779,7 +779,7 @@ app.post('/webhook', (req, res) => {
               const itemMeta = collectionService.getItem(target.symbol, potentialMint);
 
               if (itemMeta) {
-                console.log(`[RawParser] MATCH FOUND! ${itemMeta.name} is in ${target.symbol}`);
+                //console.log(`[RawParser] MATCH FOUND! ${itemMeta.name} is in ${target.symbol}`);
 
                 // Get item rarity info once
                 const itemRankStat = itemMeta.rank_statistical || itemMeta.rank || 0;

@@ -111,6 +111,18 @@ This project is currently deployed on a **Vultr** VPS in **New Jersey (NJ)**.
 - **Hardware**: 1 vCPU / 1GB RAM (Proven stable for monitoring ~10 collections).
 - **Benefit**: **Reliability**. Ensures 24/7 uptime and eliminates home internet connection drops/interruptions.
 
+## 🔮 Strategic Turn: Program-Level WebSockets (Architecture 2.0)
+
+**The Bottleneck:** Helius Webhooks suffer from "Indexing Lag" (2.5s - 4.0s). By the time you receive the webhook, the block has been confirmed and indexed, meaning you are already seconds behind gRPC bots.
+
+**The Solution:** Switch from reactive Webhooks to **Program-Level WebSockets**.
+
+1.  **Direct Feed:** Subscribe to `logsSubscribe` for the Magic Eden V2 Program ID (`M2mx...`).
+2.  **Local Filtering:** Instead of relying on Helius to filter addresses, receive **ALL** market logs and filter them locally against `target_mints.json` in memory (0ms).
+3.  **Result:** Detection latency drops from **~3.0s** to **<500ms**, triggering the buy in the *same* or *next* block.
+
+*Note: This architecture is currently being integrated to replace the legacy Webhook system.*
+
 ## ⚙️ Configuration
 
 Targets are managed via the UI, but persisted in `config.json`.
