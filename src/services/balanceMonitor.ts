@@ -62,6 +62,12 @@ export class BalanceMonitor {
         this.broadcaster.broadcastMessage('balanceUpdate', { balance: this.currentBalance });
     }
 
+    public increaseBalance(amount: number) {
+        this.currentBalance += amount;
+        // Broadcast update immediately so UI reflects the change
+        this.broadcaster.broadcastMessage('balanceUpdate', { balance: this.currentBalance });
+    }
+
     public stop() {
         if (this.intervalId) {
             clearInterval(this.intervalId);

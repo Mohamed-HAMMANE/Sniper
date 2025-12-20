@@ -993,6 +993,9 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       throw new Error(`Insufficient funds: ${balance.toFixed(3)} SOL < ${price} + 0.02 SOL`);
     }
 
+    // Optimistic Balance Deduction (Prevent Race Conditions)
+    balanceMonitor.decreaseBalance(price);
+
     const ME_API_KEY = process.env.ME_API_KEY;
     const BURNER_KEY_RAW = process.env.BURNER_WALLET_PRIVATE_KEY;
     const BURNER_ADDRESS = process.env.BURNER_WALLET_ADDRESS;
@@ -1094,7 +1097,8 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
     // No explicit agent needed here if setGlobalDispatcher is used!
     const meResp = await fetch(meUrl, {
-      headers: { 'Authorization': `Bearer ${ME_API_KEY}` }
+      headers: { 'Authorization': `Bearer ${ME_API_KEY}` },
+      signal: AbortSignal.timeout(10000) // 10s Timeout to prevent ActiveMints lockout
     });
 
     if (!meResp.ok) {
@@ -1161,10 +1165,17 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
     // Monitor
     confirmationService.monitor(signature, 'Buy Now');
-    balanceMonitor.decreaseBalance(price);
+    // balanceMonitor.decreaseBalance(price); // Moved to start (Optimistic)
 
     return signature;
 
+  } catch (error) {
+    // REFUND on Failure
+    // If we deducted but failed to complete the logic, give it back.
+    // Note: If the error came AFTER broadcast (e.g. monitoring), we might want to be careful.
+    // But this catch wraps the whole function.
+    balanceMonitor.increaseBalance(price);
+    throw error;
   } finally {
     ActiveMints.delete(mint);
   }
