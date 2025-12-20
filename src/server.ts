@@ -259,9 +259,19 @@ app.post('/api/feed/clear', (req, res) => {
 });
 
 // Remove entire target collection
+// Stop Watching (Remove from Webhook, keep local data)
 app.delete('/api/target/:symbol', async (req, res) => {
   const { symbol } = req.params;
   await configManager.removeTarget(symbol);
+  await setupManager.markAsUnsynced(symbol);
+  res.json({ success: true, targets: configManager.getTargets() });
+});
+
+// Full Delete (Remove from Webhook + Delete local data)
+app.delete('/api/collection/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  await configManager.removeTarget(symbol);
+  await setupManager.deleteCollectionData(symbol); // Deletes files
   res.json({ success: true, targets: configManager.getTargets() });
 });
 
@@ -290,13 +300,49 @@ app.get('/api/stats', (req, res) => {
 
 
 // Setup: Init
+// Setup: Manager Stats
+app.get('/api/setup/manager', (req, res) => {
+  const stats = setupManager.getManagerStats();
+  res.json({ success: true, collections: stats });
+});
+
+// Setup: Init (Download only)
 app.post('/api/setup/init', async (req, res) => {
-  const { symbol, address, name, image, type, minRarity } = req.body;
+  const { symbol, address, name, image, type } = req.body;
   if (!symbol || !address) return res.status(400).json({ error: 'Missing required fields' });
 
   // Fire and forget - client listens to SSE
-  setupManager.initializeCollection(symbol, address, name, image, type, minRarity || 'COMMON');
-  res.json({ success: true, message: 'Initialization started' });
+  setupManager.downloadAndAnalyze(symbol, address, name, image, type || 'standard');
+  res.json({ success: true, message: 'Download started' });
+});
+
+// Setup: Sync (Update Webhook)
+app.post('/api/setup/sync', async (req, res) => {
+  const { symbol, minRarity, traits } = req.body;
+  if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
+
+  try {
+    const result = await setupManager.syncCollection(symbol, minRarity || 'COMMON', traits || '');
+
+    // Auto-add to sidebar if not already present
+    const existing = configManager.getTargets().find(t => t.symbol === symbol);
+    if (!existing) {
+      await configManager.addTarget({
+        symbol,
+        filters: [{
+          id: 'default',
+          priceMax: 10,
+          minRarity: minRarity || 'COMMON',
+          autoBuy: false
+        }]
+      });
+    }
+
+    res.json({ success: true, count: result.count });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Get Traits for Collection
@@ -969,15 +1015,16 @@ app.listen(PORT, () => {
 });
 
 // Shutdown
-const shutdown = async () => {
-  console.log('\n[Server] Shutting down...');
+const shutdown = async (signal: string) => {
+  console.log(`\n[Server] Shutting down (${signal})...`);
   await collectionService.stopAutoSave();
   blockhashManager.stop();
   balanceMonitor.stop();
+  console.log('[Server] Shutdown complete. Exiting.');
   process.exit(0);
 };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Buy Feature
 let heliusConnection: Connection | null = null;
@@ -1204,6 +1251,8 @@ app.post('/api/buy', async (req, res) => {
 // Global Error Handling
 process.on('uncaughtException', (err) => {
   console.error('[Process] Uncaught Exception:', err);
+  // Optionally shutdown on fatal
+  // shutdown('UNCAUGHT_EXCEPTION');
 });
 
 process.on('unhandledRejection', (reason, promise) => {

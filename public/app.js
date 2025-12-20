@@ -5,28 +5,43 @@ let availableCollections = [];
 let soundEnabled = true;
 
 // ==================== DOM ELEMENTS ====================
-const clientStatus = document.getElementById('client-status');
-const cacheCount = document.getElementById('cache-count');
-const listingsFeed = document.getElementById('listings-feed');
-const clearFeedBtn = document.getElementById('clear-feed-btn');
-const activeTargetsList = document.getElementById('active-targets-list');
-const sidebarToggle = document.getElementById('sidebar-toggle');
-const sidebar = document.getElementById('sidebar');
-const addCollectionToggle = document.getElementById('add-collection-toggle');
-const collectionListContainer = document.getElementById('collection-list-container');
-const watchCount = document.getElementById('watch-count');
-const soundToggle = document.getElementById('sound-toggle');
+let clientStatus;
+let cacheCount;
+let listingsFeed;
+let clearFeedBtn;
+let activeTargetsList;
+let sidebarToggle;
+let sidebar;
+let addCollectionToggle;
+let collectionListContainer;
+let watchCount;
+let soundToggle;
 
 // ==================== AUDIO ====================
 const alertSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz0IAyBx1tu+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lREzSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE0i9n0xnIpBSh+zPLaizsIGGS57OihUxELTKXh8bllHAU2jtHz1IAyBx1su+3nmVERNIvZ9MZyKQUofszy2os7CBhkuezoQVMRC0yl4fG5ZRwFNo7R89SAMgcdbLvt55lRETSL2fTGcikFKH7M8tqLOwgYZLns6KFTEQtMpeHxuWUcBTaO0fPUgDIHHWy77eeZURE=');
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', () => {
+  initDOMElements();
   loadConfig();
   connectSSE();
   setupEventListeners();
   loadStats();
 });
+
+function initDOMElements() {
+  clientStatus = document.getElementById('client-status');
+  cacheCount = document.getElementById('cache-count');
+  listingsFeed = document.getElementById('listings-feed');
+  clearFeedBtn = document.getElementById('clear-feed-btn');
+  activeTargetsList = document.getElementById('active-targets-list');
+  sidebarToggle = document.getElementById('sidebar-toggle');
+  sidebar = document.getElementById('sidebar');
+  addCollectionToggle = document.getElementById('add-collection-toggle');
+  collectionListContainer = document.getElementById('collection-list-container');
+  watchCount = document.getElementById('watch-count');
+  soundToggle = document.getElementById('sound-toggle');
+}
 
 // ==================== EVENT LISTENERS ====================
 function setupEventListeners() {
@@ -44,16 +59,14 @@ function setupEventListeners() {
 
   addCollectionToggle?.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wrapper = document.querySelector('.add-collection-wrapper');
-    wrapper.classList.toggle('open');
     collectionListContainer.classList.toggle('hidden');
   });
 
   document.addEventListener('click', (e) => {
-    const wrapper = document.querySelector('.add-collection-wrapper');
-    if (wrapper && !wrapper.contains(e.target)) {
-      wrapper.classList.remove('open');
-      collectionListContainer.classList.add('hidden');
+    if (addCollectionToggle && collectionListContainer) {
+      if (!addCollectionToggle.contains(e.target) && !collectionListContainer.contains(e.target)) {
+        collectionListContainer.classList.add('hidden');
+      }
     }
   });
 }
@@ -104,12 +117,20 @@ async function loadConfig() {
     const config = await res.json();
     activeTargets = config.targets || [];
     availableCollections = config.collections || [];
+    managerCollections = config.collections || [];
     window.defaultPriorityFee = config.defaultPriorityFee; // Store globally for UI
     renderCollectionWidget();
     renderActiveTargets();
     updateWatchCount();
+
+    // Refresh manager table if modal is currently open
+    const managerModal = document.getElementById('manager-modal');
+    if (managerModal && !managerModal.classList.contains('hidden')) {
+      renderManagerTable();
+    }
   } catch (e) {
     console.error('Error loading config:', e);
+    showToast(`Config Load Error: ${e.message}`, 'error');
   }
 }
 
@@ -126,6 +147,12 @@ function updateWatchCount() {
   if (watchCount) watchCount.textContent = activeTargets.length;
 }
 
+window.openSetup = function () {
+  document.getElementById('setup-modal').classList.remove('hidden');
+  document.getElementById('setup-form').classList.remove('hidden');
+  document.getElementById('setup-progress-container').classList.add('hidden');
+}
+
 function handleFloorPriceUpdate({ symbol, floorPrice }) {
   const col = availableCollections.find(c => c.symbol === symbol);
   if (col) col.floorPrice = floorPrice;
@@ -138,30 +165,6 @@ function handleFloorPriceUpdate({ symbol, floorPrice }) {
 function renderCollectionWidget() {
   collectionListContainer.innerHTML = '';
   availableCollections.sort((a, b) => a.name.localeCompare(b.name));
-
-  // 1. Add "Create New" Button
-  const createBtn = document.createElement('div');
-  createBtn.className = 'collection-item create-new';
-  createBtn.style.borderBottom = '1px solid var(--border)';
-  createBtn.style.marginBottom = '4px';
-  createBtn.style.paddingBottom = '8px';
-  createBtn.onclick = (e) => {
-    e.stopPropagation();
-    document.getElementById('setup-modal').classList.remove('hidden');
-    document.getElementById('setup-form').classList.remove('hidden');
-    document.getElementById('setup-progress-container').classList.add('hidden');
-    // Close dropdown
-    document.querySelector('.add-collection-wrapper')?.classList.remove('open');
-    collectionListContainer.classList.add('hidden');
-  };
-  createBtn.innerHTML = `
-    <div style="width:24px;height:24px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;">+</div>
-    <div class="collection-info">
-      <span class="collection-name" style="color:var(--accent);">Setup New Collection</span>
-      <span class="collection-fp" style="font-size:9px;">Add to database & webhook</span>
-    </div>
-  `;
-  collectionListContainer.appendChild(createBtn);
 
   availableCollections.forEach(col => {
     const item = document.createElement('div');
@@ -317,139 +320,143 @@ document.getElementById('chart-modal').addEventListener('click', (e) => {
 // ==================== ACTIVE TARGETS ====================
 
 function renderActiveTargets() {
-  activeTargetsList.innerHTML = '';
+  try {
+    activeTargetsList.innerHTML = '';
 
-  if (activeTargets.length === 0) {
-    activeTargetsList.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">No active watches</div>';
-    return;
-  }
+    if (activeTargets.length === 0) {
+      activeTargetsList.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;">No active watches</div>';
+      return;
+    }
 
-  activeTargets.forEach(target => {
-    const col = availableCollections.find(c => c.symbol === target.symbol);
-    const name = col ? col.name : target.symbol;
-    const image = col?.image || '';
-    const fp = col?.floorPrice;
+    activeTargets.forEach(target => {
+      const col = availableCollections.find(c => c.symbol === target.symbol);
+      const name = col ? col.name : target.symbol;
+      const image = col?.image || '';
+      const fp = col?.floorPrice;
 
-    // Use the state from the target object itself (loaded from config)
-    const isCollapsed = target.collapsed === true;
+      const isCollapsed = target.collapsed === true;
 
-    const card = document.createElement('div');
-    card.className = `target-card ${isCollapsed ? 'collapsed' : ''}`;
-    card.dataset.symbol = target.symbol;
+      const card = document.createElement('div');
+      card.className = `target-card ${isCollapsed ? 'collapsed' : ''}`;
+      card.dataset.symbol = target.symbol;
 
-    // Build filter rows - now with VERTICAL layout
-    const filtersHtml = (target.filters || []).map((filter, idx) => {
-      const rarityClass = (filter.minRarity || 'common').toLowerCase();
-      const traitCount = filter.traitFilters ? Object.keys(filter.traitFilters).length : 0;
-      return `
-        <div class="filter-block" data-filter-id="${filter.id}">
-          <div class="filter-header">
-            <span class="filter-index">Filter ${idx + 1}</span>
-            <label class="auto-toggle ${filter.autoBuy ? 'active' : ''}" title="Auto Buy">
-              <input type="checkbox" ${filter.autoBuy ? 'checked' : ''} 
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </label>
-          </div>
-          
-          <!-- Vertical layout: one field per row -->
-          <div class="filter-row">
-            <span class="filter-row-label">MAX PRICE</span>
-            <div class="filter-row-input">
-              <input type="number" class="control-input" value="${filter.priceMax}" step="0.1" 
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'priceMax', this.value)">
-              <span class="input-suffix-inline">◎</span>
+      const filtersHtml = (target.filters || []).map((filter, idx) => {
+        const rarityClass = (filter.minRarity || 'common').toLowerCase();
+        const traitCount = filter.traitFilters ? Object.keys(filter.traitFilters).length : 0;
+        return `
+          <div class="filter-block" data-filter-id="${filter.id}">
+            <div class="filter-header">
+              <span class="filter-index">Filter ${idx + 1}</span>
+              <label class="auto-toggle ${filter.autoBuy ? 'active' : ''}" title="Auto Buy">
+                <input type="checkbox" ${filter.autoBuy ? 'checked' : ''} 
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'autoBuy', this.checked); this.parentElement.classList.toggle('active', this.checked);">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
             </div>
-          </div>
+            
+            <!-- Vertical layout: one field per row -->
+            <div class="filter-row">
+              <span class="filter-row-label">MAX PRICE</span>
+              <div class="filter-row-input">
+                <input type="number" class="control-input" value="${filter.priceMax}" step="0.1" 
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'priceMax', this.value)">
+                <span class="input-suffix-inline">◎</span>
+              </div>
+            </div>
 
-          <div class="filter-row">
-            <span class="filter-row-label">MAX RANK</span>
-            <div class="filter-row-input">
-              <input type="number" class="control-input" value="${filter.maxRank || ''}" placeholder="Any" step="1" 
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'maxRank', this.value)">
-              <span class="input-suffix-inline">#</span>
+            <div class="filter-row">
+              <span class="filter-row-label">MAX RANK</span>
+              <div class="filter-row-input">
+                <input type="number" class="control-input" value="${filter.maxRank || ''}" placeholder="Any" step="1" 
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'maxRank', this.value)">
+                <span class="input-suffix-inline">#</span>
+              </div>
             </div>
-          </div>
 
-          
-          <div class="filter-row">
-            <span class="filter-row-label">MIN RARITY</span>
-            <div class="filter-row-input rarity-indicator ${rarityClass}">
-              <select class="rarity-dropdown" 
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'minRarity', this.value); this.parentElement.className='filter-row-input rarity-indicator '+this.value.toLowerCase();">
-                ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
-        `<option value="${r}" ${filter.minRarity === r ? 'selected' : ''}>${r}</option>`
-      ).join('')}
-              </select>
+            
+            <div class="filter-row">
+              <span class="filter-row-label">MIN RARITY</span>
+              <div class="filter-row-input rarity-indicator ${rarityClass}">
+                <select class="rarity-dropdown" 
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'minRarity', this.value); this.parentElement.className='filter-row-input rarity-indicator '+this.value.toLowerCase();">
+                  ${['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY', 'MYTHIC'].map(r =>
+          `<option value="${r}" ${filter.minRarity === r ? 'selected' : ''}>${r}</option>`
+        ).join('')}
+                </select>
+              </div>
             </div>
-          </div>
-          
-          <div class="filter-row">
-            <span class="filter-row-label">RARITY TYPE</span>
-            <div class="filter-row-input">
-              <select class="type-dropdown" 
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'rarityType', this.value)">
-                <option value="statistical" ${filter.rarityType === 'statistical' ? 'selected' : ''}>Statistical</option>
-                <option value="additive" ${filter.rarityType === 'additive' ? 'selected' : ''}>Additive</option>
-              </select>
+            
+            <div class="filter-row">
+              <span class="filter-row-label">RARITY TYPE</span>
+              <div class="filter-row-input">
+                <select class="type-dropdown" 
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'rarityType', this.value)">
+                  <option value="statistical" ${filter.rarityType === 'statistical' ? 'selected' : ''}>Statistical</option>
+                  <option value="additive" ${filter.rarityType === 'additive' ? 'selected' : ''}>Additive</option>
+                </select>
+              </div>
             </div>
-          </div>
-          
-          <div class="filter-row">
-            <span class="filter-row-label">ATTRIBUTES</span>
-            <button class="btn-attrs ${traitCount > 0 ? 'has-selection' : ''}" 
-              onclick="openTraitFiltersForFilter('${target.symbol}', '${filter.id}')">
-              ${traitCount > 0 ? traitCount + ' selected' : '0 selected'}
+            
+            <div class="filter-row">
+              <span class="filter-row-label">ATTRIBUTES</span>
+              <button class="btn-attrs ${traitCount > 0 ? 'has-selection' : ''}" 
+                onclick="openTraitFiltersForFilter('${target.symbol}', '${filter.id}')">
+                ${traitCount > 0 ? traitCount + ' selected' : '0 selected'}
+              </button>
+            </div>
+
+            <div class="filter-row">
+              <span class="filter-row-label">JITO FEE (SOL)</span>
+              <div class="filter-row-input">
+                <input type="number" class="control-input" value="${filter.priorityFee || ''}" step="0.0001" placeholder="${window.defaultPriorityFee || '0.0005'}"
+                  onchange="updateFilter('${target.symbol}', '${filter.id}', 'priorityFee', this.value)">
+                <span class="input-suffix-inline">◎</span>
+              </div>
+            </div>
+            
+            <button class="btn-delete-filter" onclick="deleteFilter('${target.symbol}', '${filter.id}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
+              DELETE FILTER
             </button>
           </div>
+        `;
+      }).join('');
 
-          <div class="filter-row">
-            <span class="filter-row-label">JITO FEE (SOL)</span>
-            <div class="filter-row-input">
-              <input type="number" class="control-input" value="${filter.priorityFee || ''}" step="0.0001" placeholder="${window.defaultPriorityFee || '0.0005'}"
-                onchange="updateFilter('${target.symbol}', '${filter.id}', 'priorityFee', this.value)">
-              <span class="input-suffix-inline">◎</span>
-            </div>
+      card.innerHTML = `
+        <button class="btn-close-float" onclick="event.stopPropagation(); removeTarget('${target.symbol}')" title="Stop Watching">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+
+        <div class="target-card-header" onclick="toggleCardCollapse('${target.symbol}')">
+          ${image
+          ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openChart('${target.symbol}')">`
+          : `<div class="target-thumb-placeholder" onclick="event.stopPropagation(); openChart('${target.symbol}')">🎯</div>`
+        }
+          <div class="target-title-group">
+            <span class="target-name" onclick="event.stopPropagation(); openChart('${target.symbol}')">${name}</span>
+            <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
           </div>
-          
-          <button class="btn-delete-filter" onclick="deleteFilter('${target.symbol}', '${filter.id}')">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
-            DELETE FILTER
+          <button class="btn-collapse" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="${isCollapsed ? 'M6 9l6 6 6-6' : 'M18 15l-6-6-6 6'}"/>
+            </svg>
+          </button>
+        </div>
+        <div class="filters-container ${isCollapsed ? 'hidden' : ''}">
+          ${filtersHtml}
+          <button class="btn-add-filter" onclick="addFilter('${target.symbol}')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Add filter
           </button>
         </div>
       `;
-    }).join('');
+      activeTargetsList.appendChild(card);
+    });
 
-    card.innerHTML = `
-      <button class="btn-close-float" onclick="event.stopPropagation(); removeTarget('${target.symbol}')" title="Stop Watching">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
-
-      <div class="target-card-header" onclick="toggleCardCollapse('${target.symbol}')">
-        ${image
-        ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openChart('${target.symbol}')">`
-        : `<div class="target-thumb-placeholder" onclick="event.stopPropagation(); openChart('${target.symbol}')">🎯</div>`
-      }
-        <div class="target-title-group">
-          <span class="target-name" onclick="event.stopPropagation(); openChart('${target.symbol}')">${name}</span>
-          <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
-        </div>
-        <button class="btn-collapse" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="${isCollapsed ? 'M6 9l6 6 6-6' : 'M18 15l-6-6-6 6'}"/>
-          </svg>
-        </button>
-      </div>
-      <div class="filters-container ${isCollapsed ? 'hidden' : ''}">
-        ${filtersHtml}
-        <button class="btn-add-filter" onclick="addFilter('${target.symbol}')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-          Add filter
-        </button>
-      </div>
-    `;
-    activeTargetsList.appendChild(card);
-  });
+  } catch (e) {
+    console.error(e);
+    showToast(`Render Error: ${e.message}`, 'error');
+  }
 }
 
 // Toggle card collapse state and persist to server
@@ -493,7 +500,6 @@ async function addTarget(symbol) {
       activeTargets = data.targets;
       renderActiveTargets();
       updateWatchCount();
-      document.querySelector('.add-collection-wrapper')?.classList.remove('open');
       collectionListContainer.classList.add('hidden');
       showToast(`Watching ${symbol}`, 'success');
     }
@@ -820,7 +826,7 @@ window.startInitialization = async function () {
   const name = document.getElementById('setup-name').value.trim();
   const image = document.getElementById('setup-image').value.trim();
   const type = document.getElementById('setup-type').value;
-  const minRarity = document.getElementById('setup-rarity').value;
+  // minRarity removed (Stage 2)
 
   if (!symbol || !address || !name || !image) {
     showToast('Please fill in all fields', 'error');
@@ -842,8 +848,7 @@ window.startInitialization = async function () {
         address,
         name,
         image,
-        type,
-        minRarity
+        type
       })
     });
 
@@ -877,7 +882,11 @@ function handleSetupProgress(data) {
 function handleSetupComplete(data) {
   showToast(`Setup Complete! Found ${data.count} items.`, 'success');
   closeSetup();
-  loadConfig(); // Refresh list
+  // Automatically open Sync Config for the new collection
+  if (data.symbol) {
+    openSyncConfig(data.symbol, 'COMMON', '');
+  }
+  loadConfig();
 }
 
 function handleSetupError(data) {
@@ -896,7 +905,7 @@ let totalItems = 0; // Total items in collection for percentage calculation
 // Open trait filters for a specific filter
 window.openTraitFiltersForFilter = async function (symbol, filterId) {
   currentTraitSymbol = symbol;
-  currentTraitFilterId = filterId;
+  currentTraitFilterId = filterId; // if null, we are in Sync Modal mode
   const modal = document.getElementById('trait-modal');
 
   // Reset state
@@ -905,10 +914,15 @@ window.openTraitFiltersForFilter = async function (symbol, filterId) {
   document.getElementById('trait-options').innerHTML = '';
   document.getElementById('trait-search').value = '';
 
-  // Get current active filters from the specific filter
-  const target = activeTargets.find(t => t.symbol === symbol);
-  const filter = target?.filters?.find(f => f.id === filterId);
-  activeFilters = filter?.traitFilters ? JSON.parse(JSON.stringify(filter.traitFilters)) : {};
+  if (filterId) {
+    // Normal Mode: Get current active filters from the specific target/filter
+    const target = activeTargets.find(t => t.symbol === symbol);
+    const filter = target?.filters?.find(f => f.id === filterId);
+    activeFilters = filter?.traitFilters ? JSON.parse(JSON.stringify(filter.traitFilters)) : {};
+  } else {
+    // Sync Modal Mode: Use the dedicated global
+    activeFilters = JSON.parse(JSON.stringify(syncTraitFilters));
+  }
 
   try {
     const res = await fetch(`/api/traits/${symbol}`);
@@ -1081,18 +1095,42 @@ function updateTraitSummary() {
 window.saveTraitFilters = async function () {
   if (!currentTraitSymbol) return;
 
-  const traitFilters = Object.keys(activeFilters).length > 0 ? activeFilters : null;
+  const traitFilters = JSON.parse(JSON.stringify(activeFilters));
 
-  // Save to specific filter if we have a filter ID
   if (currentTraitFilterId) {
+    // Normal mode: Update specific filter
     await updateFilter(currentTraitSymbol, currentTraitFilterId, 'traitFilters', traitFilters);
   } else {
-    // Legacy fallback
-    await updateTarget(currentTraitSymbol, 'traitFilters', traitFilters);
+    // Sync Modal mode: Save to temporary global and update UI
+    syncTraitFilters = traitFilters;
+    updateSyncTraitSummary();
   }
 
   closeTraitFilters();
   renderActiveTargets();
+}
+
+function updateSyncTraitSummary() {
+  const summaryEl = document.getElementById('sync-traits-summary');
+  if (!summaryEl) return;
+
+  const categories = Object.keys(syncTraitFilters).filter(cat => syncTraitFilters[cat] && syncTraitFilters[cat].length > 0);
+  if (categories.length === 0) {
+    summaryEl.innerHTML = 'No attributes selected';
+    return;
+  }
+
+  let html = '';
+  categories.forEach(cat => {
+    html += `<div><strong>${cat}:</strong> ${syncTraitFilters[cat].join(', ')}</div>`;
+  });
+  summaryEl.innerHTML = html;
+}
+
+window.openTraitPickerForSync = function () {
+  const symbol = document.getElementById('sync-symbol').value;
+  if (!symbol) return;
+  openTraitFiltersForFilter(symbol, null);
 }
 
 window.closeTraitFilters = function () {
@@ -1107,5 +1145,216 @@ window.closeTraitFilters = function () {
 // Close on background click
 document.getElementById('trait-modal').addEventListener('click', (e) => {
   if (e.target.id === 'trait-modal') window.closeTraitFilters();
+});
+
+
+// ==================== COLLECTION MANAGER ====================
+let managerCollections = [];
+let syncTraitFilters = {}; // Temporary trait filters for the Sync Modal
+
+window.openCollectionManager = async function () {
+  const modal = document.getElementById('manager-modal');
+  modal.classList.remove('hidden');
+
+  const tbody = document.getElementById('manager-table-body');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">Loading...</td></tr>';
+
+  try {
+    const res = await fetch('/api/setup/manager');
+    const data = await res.json();
+    if (data.success) {
+      managerCollections = data.collections;
+      renderManagerTable();
+    }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--danger);">Error loading data</td></tr>';
+  }
+}
+
+window.closeCollectionManager = function () {
+  document.getElementById('manager-modal').classList.add('hidden');
+}
+
+function renderManagerTable() {
+  const tbody = document.getElementById('manager-table-body');
+  tbody.innerHTML = '';
+
+  if (managerCollections.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text-muted);">No collections found</td></tr>';
+    return;
+  }
+
+  managerCollections.forEach(col => {
+    const isSynced = col.isSynced;
+    const filters = col.filters || {};
+    const rarityBadge = !isSynced
+      ? '<span style="color:var(--text-muted);font-size:10px;">-</span>'
+      : (filters.minRarity && filters.minRarity !== 'COMMON'
+        ? `<span class="rarity-badge-inline ${filters.minRarity.toLowerCase()}">${filters.minRarity}</span>`
+        : '<span style="color:var(--text-muted);font-size:10px;">All</span>');
+
+    // Handle traits display and serialization
+    let traitsCount = 0;
+    let safeTraits = '';
+
+    if (filters.traits && typeof filters.traits === 'object' && !Array.isArray(filters.traits)) {
+      // New format: Object
+      traitsCount = Object.values(filters.traits).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+      safeTraits = JSON.stringify(filters.traits).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+    } else {
+      // Legacy format: String or Array
+      let traitsStr = filters.traits || '';
+      if (Array.isArray(traitsStr)) traitsStr = traitsStr.join(',');
+      traitsCount = typeof traitsStr === 'string' ? traitsStr.split(',').filter(t => t.trim()).length : 0;
+      safeTraits = traitsStr.replace(/'/g, "\\'");
+    }
+
+    const traitsBadge = traitsCount > 0
+      ? `<span style="font-size:10px;color:var(--accent);">+${traitsCount} traits</span>`
+      : '';
+
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'default';
+    tr.innerHTML = `
+      <td>
+        <div class="col-info">
+          <img src="${col.image}" class="col-thumb" onerror="this.style.display='none'">
+          <div style="display:flex;flex-direction:column;">
+            <span style="font-weight:600;font-size:12px;">${col.name}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${col.symbol}</span>
+          </div>
+        </div>
+      </td>
+      <td><span style="font-family:'JetBrains Mono'">${col.count}</span></td>
+      <td><span style="font-family:'JetBrains Mono'">${isSynced ? col.countWatched : '-'}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          ${rarityBadge}
+          ${traitsBadge}
+        </div>
+      </td>
+      <td>
+        <span class="status-badge ${isSynced ? 'synced' : 'unsynced'}">
+          ${isSynced ? 'Active' : 'Not Active'}
+        </span>
+      </td>
+      <td>
+        <div class="action-btn-group">
+          <button class="btn-action-icon" title="Configure & Sync" onclick="openSyncConfig('${col.symbol}', '${filters.minRarity || 'COMMON'}', '${safeTraits}')">
+            ⚙️ Setup
+          </button>
+          <button class="btn-action-icon danger" title="Delete" onclick="deleteCollection('${col.symbol}')">
+            🗑️
+          </button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.deleteCollection = async function (symbol) {
+  if (!confirm(`Are you sure you want to delete ${symbol}? This will remove it from Helius and local storage.`)) return;
+
+  try {
+    const res = await fetch(`/api/collection/${symbol}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Collection deleted', 'success');
+      activeTargets = data.targets || [];
+      renderActiveTargets();
+      updateWatchCount();
+      loadConfig(); // Refresh full state to be safe
+      setTimeout(openCollectionManager, 500);
+    } else {
+      showToast('Error deleting', 'error');
+    }
+  } catch (e) {
+    showToast('Error deleting', 'error');
+  }
+}
+
+// ==================== SYNC CONFIG ====================
+window.openSyncConfig = function (symbol, currentRarity, currentTraits) {
+  const modal = document.getElementById('sync-modal');
+  modal.classList.remove('hidden');
+
+  document.getElementById('sync-symbol').value = symbol;
+  document.getElementById('sync-modal-title').textContent = `Configure ${symbol}`;
+  document.getElementById('sync-rarity').value = currentRarity || 'COMMON';
+
+  // Handle traits: could be JSON string or legacy text
+  syncTraitFilters = {};
+  if (currentTraits) {
+    try {
+      if (typeof currentTraits === 'string' && currentTraits.startsWith('{')) {
+        syncTraitFilters = JSON.parse(currentTraits);
+      } else if (typeof currentTraits === 'object') {
+        syncTraitFilters = currentTraits;
+      } else if (typeof currentTraits === 'string' && currentTraits.trim().length > 0) {
+        // Parse legacy string "K1: V1, K2: V2"
+        currentTraits.split(',').forEach(p => {
+          if (p.includes(':')) {
+            const [k, v] = p.split(':');
+            const cat = k.trim();
+            if (!syncTraitFilters[cat]) syncTraitFilters[cat] = [];
+            syncTraitFilters[cat].push(v.trim());
+          }
+        });
+      }
+    } catch (e) { console.warn('Error parsing traits:', e); }
+  }
+  updateSyncTraitSummary();
+}
+
+window.closeSyncModal = function () {
+  document.getElementById('sync-modal').classList.add('hidden');
+}
+
+window.startSync = async function () {
+  const symbol = document.getElementById('sync-symbol').value;
+  const minRarity = document.getElementById('sync-rarity').value;
+  const btn = document.getElementById('btn-sync-start');
+
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+
+  try {
+    const res = await fetch('/api/setup/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, minRarity, traits: syncTraitFilters })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Synced! Watching ${data.count} items.`, 'success');
+      closeSyncModal();
+
+      // Refresh manager if open
+      if (!document.getElementById('manager-modal').classList.contains('hidden')) {
+        openCollectionManager();
+      }
+
+      // Refresh sidebar
+      loadConfig();
+    } else {
+      showToast('Sync failed: ' + data.error, 'error');
+    }
+  } catch (e) {
+    showToast('Sync error', 'error');
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Update Webhook';
+  }
+}
+
+// Modal Background Listeners
+document.getElementById('manager-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'manager-modal') closeCollectionManager();
+});
+document.getElementById('sync-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'sync-modal') closeSyncModal();
 });
 

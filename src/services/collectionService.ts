@@ -32,6 +32,7 @@ export class CollectionService {
 
     private isDirty: boolean = false;
     private saveTimer: NodeJS.Timeout | null = null;
+    private currentSavePromise: Promise<void> | null = null;
 
     constructor() {
         this.dataDir = path.join(__dirname, '../../data');
@@ -61,19 +62,31 @@ export class CollectionService {
             const collectionsPath = path.join(this.dataDir, 'collections.json');
             if (fs.existsSync(collectionsPath)) {
                 const data = fs.readFileSync(collectionsPath, 'utf-8');
-                if (!data || data.trim().length === 0) {
-                    this.collections = [];
-                } else {
-                    this.collections = JSON.parse(data);
+                const parsed = JSON.parse(data);
+                this.collections = Array.isArray(parsed) ? parsed : [];
+
+                // DATA MIGRATION: Ensure traits is always a string
+                for (const col of this.collections) {
+                    if (col.filters) {
+                        if (Array.isArray(col.filters.traits)) {
+                            col.filters.traits = col.filters.traits.join(',');
+                        } else if (col.filters.traits === null || col.filters.traits === undefined) {
+                            col.filters.traits = '';
+                        }
+                    }
                 }
-                console.log(`[CollectionService] Loaded ${this.collections.length} collections.`);
+
+                console.log(`[CollectionService] Loaded ${this.collections.length} collections (migrated).`);
 
                 // Load individual databases
+                this.itemDatabases.clear();
                 for (const col of this.collections) {
                     this.loadDatabase(col.symbol);
                 }
             } else {
-                console.warn('[CollectionService] collections.json not found.');
+                console.warn('[CollectionService] collections.json not found. Initializing empty.');
+                this.collections = [];
+                fs.writeFileSync(collectionsPath, '[]');
             }
         } catch (error) {
             console.error('[CollectionService] Error loading collections, resetting db:', error);
@@ -127,25 +140,60 @@ export class CollectionService {
     public async saveCollections() {
         if (!this.isDirty) return;
 
-        try {
-            const collectionsPath = path.join(this.dataDir, 'collections.json');
-            // Write to temp file then rename for atomic write
-            const tempPath = `${collectionsPath}.tmp`;
-            await fs.promises.writeFile(tempPath, JSON.stringify(this.collections, null, 2), 'utf-8');
-            await fs.promises.rename(tempPath, collectionsPath);
-            this.isDirty = false;
-            // console.log('[CollectionService] Saved collections.json');
-        } catch (error) {
-            console.error('[CollectionService] Error saving collections:', error);
+        // If a save is already in progress, wait for it and then start this one
+        if (this.currentSavePromise) {
+            await this.currentSavePromise;
+            // After previous finish, check if we still need to save (could have been handled by the queue)
+            if (!this.isDirty) return;
         }
+
+        this.currentSavePromise = (async () => {
+            try {
+                const collectionsPath = path.join(this.dataDir, 'collections.json');
+                // Write to temp file then rename for atomic write
+                const tempPath = `${collectionsPath}.tmp`;
+                await fs.promises.writeFile(tempPath, JSON.stringify(this.collections, null, 2), 'utf-8');
+                await fs.promises.rename(tempPath, collectionsPath);
+                this.isDirty = false;
+                console.log(`[CollectionService] Persisted ${this.collections.length} collections.`);
+            } catch (error) {
+                console.error('[CollectionService] Error saving collections:', error);
+            } finally {
+                this.currentSavePromise = null;
+            }
+        })();
+
+        return this.currentSavePromise;
     }
 
-    public updateCollection(symbol: string, updates: Partial<CollectionMetadata>) {
+    public async updateCollection(symbol: string, updates: Partial<CollectionMetadata>) {
         const col = this.collections.find(c => c.symbol === symbol);
         if (col) {
             Object.assign(col, updates);
             this.isDirty = true;
+            await this.saveCollections(); // Save immediately for critical updates
         }
+    }
+
+    public async addCollection(metadata: any) {
+        // Remove existing if any
+        this.collections = this.collections.filter(c => c.symbol !== metadata.symbol);
+        this.collections.push(metadata);
+
+        // Load its database immediately
+        this.loadDatabase(metadata.symbol);
+
+        this.isDirty = true;
+        await this.saveCollections();
+        console.log(`[CollectionService] Added/Updated collection: ${metadata.symbol}`);
+    }
+
+    public async removeCollection(symbol: string) {
+        this.collections = this.collections.filter(c => c.symbol !== symbol);
+        this.itemDatabases.delete(symbol);
+        this.isDirty = true;
+        await this.saveCollections();
+        console.log(`[CollectionService] Removed collection: ${symbol}`);
     }
 
     public getTraits(symbol: string): Record<string, Record<string, number>> {

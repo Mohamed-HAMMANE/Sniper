@@ -40,13 +40,17 @@
                 </div>
             </div>
 
-            <!-- Add Collection -->
-            <div class="add-collection-wrapper">
+            <div class="sidebar-actions-group">
                 <button id="add-collection-toggle" class="add-collection-btn">
-                    <span>+ Add Collection</span>
-                    <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
+                    <span>+ Add</span>
+                </button>
+                <button id="manage-collections-btn" class="manage-btn" onclick="openCollectionManager()"
+                    title="Manage Collections">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
                     </svg>
                 </button>
                 <div id="collection-list-container" class="collection-dropdown hidden">
@@ -154,7 +158,7 @@
     </div>
 
     <!-- Setup Modal (Manual Entry) -->
-    <div id="setup-modal" class="modal-overlay hidden">
+    <div id="setup-modal" class="modal-overlay hidden" style="z-index: 2000;">
         <div class="modal-content setup-content">
             <div class="modal-header">
                 <h2>Add Collection</h2>
@@ -192,20 +196,7 @@
                         <input type="text" id="setup-image" placeholder="https://..." class="control-input-lg">
                     </div>
 
-                    <div class="form-group full-width">
-                        <label>Minimum Rarity to Watch</label>
-                        <select id="setup-rarity" class="control-input-lg">
-                            <option value="COMMON">All Rarities (Common+)</option>
-                            <option value="UNCOMMON">Uncommon+</option>
-                            <option value="RARE">Rare+</option>
-                            <option value="EPIC">Epic+</option>
-                            <option value="LEGENDARY">Legendary+</option>
-                            <option value="MYTHIC">Mythic Only</option>
-                        </select>
-                        <small style="color: var(--text-muted); font-size: 10px; margin-top: 4px; display: block;">
-                            Only items with this rarity or higher will be registered in the webhook.
-                        </small>
-                    </div>
+                    <!-- Rarity removed: configured in Stage 2 -->
 
                     <button id="btn-init-start" class="btn-primary full-width" style="margin-top: 10px;"
                         onclick="startInitialization()">
@@ -228,7 +219,7 @@
     </div>
 
     <!-- Trait Filter Modal -->
-    <div id="trait-modal" class="modal-overlay hidden">
+    <div id="trait-modal" class="modal-overlay hidden" style="z-index: 3000;">
         <div class="modal-content trait-modal-content">
             <div class="modal-header">
                 <h2>Attributes</h2>
@@ -255,6 +246,80 @@
                     <button class="btn-cancel" onclick="closeTraitFilters()">Cancel</button>
                     <button class="btn-apply" onclick="saveTraitFilters()">Apply</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Collection Manager Modal -->
+    <div id="manager-modal" class="modal-overlay hidden">
+        <div class="modal-content manager-content">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <h2>Collection Manager</h2>
+                    <button class="btn-setup-new" onclick="openSetup()" title="Setup New Collection">
+                        + Setup New
+                    </button>
+                </div>
+                <button class="modal-close" onclick="closeCollectionManager()">×</button>
+            </div>
+            <div class="manager-body">
+                <table class="manager-table">
+                    <thead>
+                        <tr>
+                            <th>Collection</th>
+                            <th>Total Items</th>
+                            <th>Watching</th>
+                            <th>Filters</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manager-table-body">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sync Config Modal (Sub-modal) -->
+    <div id="sync-modal" class="modal-overlay hidden" style="z-index: 2000;">
+        <div class="modal-content sync-content">
+            <div class="modal-header">
+                <h2 id="sync-modal-title">Configure Watch</h2>
+                <button class="modal-close" onclick="closeSyncModal()">×</button>
+            </div>
+            <div class="sync-body form-grid">
+                <input type="hidden" id="sync-symbol">
+
+                <div class="form-group full-width">
+                    <label>Minimum Rarity</label>
+                    <select id="sync-rarity" class="control-input-lg">
+                        <option value="COMMON">All Rarities (Common+)</option>
+                        <option value="UNCOMMON">Uncommon+</option>
+                        <option value="RARE">Rare+</option>
+                        <option value="EPIC">Epic+</option>
+                        <option value="LEGENDARY">Legendary+</option>
+                        <option value="MYTHIC">Mythic Only</option>
+                    </select>
+                </div>
+
+                <div class="form-group full-width">
+                    <label>Traits to Watch (Optional)</label>
+                    <div class="trait-selection-group">
+                        <div id="sync-traits-summary" class="trait-selection-summary">
+                            No attributes selected
+                        </div>
+                        <button type="button" class="btn-secondary btn-sm" onclick="openTraitPickerForSync()"
+                            style="width: fit-content;">
+                            Select Attributes
+                        </button>
+                    </div>
+                </div>
+
+                <button id="btn-sync-start" class="btn-primary full-width" onclick="startSync()">
+                    Update Webhook
+                </button>
             </div>
         </div>
     </div>

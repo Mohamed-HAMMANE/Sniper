@@ -23,51 +23,77 @@ export class SetupManager {
 
 
     /**
-     * Init: Downloads items, Calcs Rarity, Filters by MinRarity, Updates Webhook, Saves DB
+     * Stage 1: Search, Download, Analyze & Save DB. Does NOT update webhook.
      */
-    public async initializeCollection(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core', minRarity: string) {
-        this.runInitializationProcess(symbol, address, name, image, type, minRarity).catch(err => {
-            console.error(`[SetupManager] Initialization failed for ${symbol}:`, err);
+    public async downloadAndAnalyze(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core') {
+        this.runDownloadProcess(symbol, address, name, image, type).catch(err => {
+            console.error(`[SetupManager] Download failed for ${symbol}:`, err);
             this.broadcaster.broadcastMessage('setup_error', { symbol, error: err.message });
         });
     }
 
-    private async runInitializationProcess(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core', minRarity: string) {
-        console.log(`[SetupManager] Starting initialization for ${symbol} (Min Rarity: ${minRarity})...`);
+    private async runDownloadProcess(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core') {
+        console.log(`[SetupManager] Starting download for ${symbol}...`);
         this.broadcaster.broadcastMessage('setup_progress', { symbol, percent: 0, message: 'Starting download...' });
 
         // 1. Download All Items
         const allItems = [];
         let page = 1;
-        while (true) {
-            try {
-                this.broadcaster.broadcastMessage('setup_progress', {
-                    symbol,
-                    percent: 10,
-                    message: `Fetching page ${page} (${allItems.length} items)...`
-                });
+        let isDone = false;
+        while (!isDone) {
+            let attempt = 0;
+            const maxRetries = 3;
+            let success = false;
 
-                const response = await fetch(this.rpcUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0', id: 'init', method: 'getAssetsByGroup',
-                        params: { groupKey: 'collection', groupValue: address, page: page, limit: 1000 }
-                    }),
-                });
+            while (attempt < maxRetries && !success) {
+                try {
+                    this.broadcaster.broadcastMessage('setup_progress', {
+                        symbol,
+                        percent: 10 + (page * 2), // Slight increment
+                        message: `Fetching page ${page}${attempt > 0 ? ` (Retry ${attempt})` : ''}...`
+                    });
 
-                const data: any = await response.json();
-                const result = data.result;
-                if (!result?.items?.length) break;
+                    const response = await fetch(this.rpcUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            jsonrpc: '2.0', id: 'init', method: 'getAssetsByGroup',
+                            params: { groupKey: 'collection', groupValue: address, page: page, limit: 1000 }
+                        }),
+                    });
 
-                allItems.push(...result.items);
-                if (result.items.length < 1000) break;
-                page++;
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-            } catch (e) {
-                console.error(e);
-                throw new Error('Helius API Fetch Error');
+                    const data: any = await response.json();
+                    const result = data.result;
+
+                    if (!result?.items) {
+                        console.error('[SetupManager] Malformed Helius response:', data);
+                        throw new Error('Malformed Helius response');
+                    }
+
+                    if (result.items.length > 0) {
+                        allItems.push(...result.items);
+                    }
+
+                    success = true; // successfully fetched page
+
+                    if (result.items.length < 1000) {
+                        isDone = true; // Last page reached
+                    } else {
+                        page++;
+                    }
+
+                } catch (e: any) {
+                    attempt++;
+                    console.error(`[SetupManager] Fetch error (Page ${page}, Attempt ${attempt}):`, e.message);
+                    if (attempt >= maxRetries) throw new Error(`Helius API Fetch Failure after ${maxRetries} retries: ${e.message}`);
+                    await new Promise(r => setTimeout(r, 1000 * attempt));
+                }
             }
+            // If we exhausted retries without success, we should likely stop or throw.
+            // The inner loop throws if maxRetries reached, catching it outside? 
+            // The throw is inside the catch block, so execution bubbles up.
         }
 
         console.log(`[SetupManager] Downloaded ${allItems.length} items.`);
@@ -122,8 +148,8 @@ export class SetupManager {
 
             allTraitTypes.forEach(type => {
                 const found = attrs.find((a: any) => String(a.trait_type).trim().toLowerCase() === type);
-                const value = found && found.value ? String(found.value).trim().toLowerCase() : "none";
-                const freq = traitCounts[type][value];
+                const activeVal = found && found.value ? String(found.value).trim().toLowerCase() : "none";
+                const freq = traitCounts[type][activeVal];
                 if (freq) {
                     score_additive += 1 / (freq / totalItems);
                     score_statistical *= (freq / totalItems);
@@ -143,7 +169,7 @@ export class SetupManager {
                 attributes: {} as Record<string, string>
             };
 
-            // Save traits to item for filtering
+            // Save traits
             allTraitTypes.forEach(type => {
                 const found = attrs.find((a: any) => String(a.trait_type).trim().toLowerCase() === type);
                 if (found && found.value) {
@@ -165,21 +191,21 @@ export class SetupManager {
             return "COMMON";
         };
 
-        // Rank Additive (High Score = Rare)
+        // Rank Additive
         scoredItems.sort((a, b) => b.score_additive - a.score_additive);
         scoredItems.forEach((item, index) => {
             item.rank_additive = index + 1;
             item.tier_additive = getTier(index + 1, totalItems);
         });
 
-        // Rank Statistical (Low Score = Rare)
+        // Rank Statistical
         scoredItems.sort((a, b) => a.score_statistical - b.score_statistical);
         scoredItems.forEach((item, index) => {
             item.rank_statistical = index + 1;
             item.tier_statistical = getTier(index + 1, totalItems);
         });
 
-        // 4. Save COMPLETE Database (Local Reference)
+        // 4. Save COMPLETE Database
         const finalDatabase: Record<string, any> = {};
         scoredItems.forEach(item => {
             finalDatabase[item.mint] = {
@@ -199,38 +225,7 @@ export class SetupManager {
         const dbPath = path.join(this.dataDir, `${symbol}.json`);
         await fs.promises.writeFile(dbPath, JSON.stringify(finalDatabase, null, 2));
 
-
-        // 5. UPDATE WEBOOK - Filter Mints by Min Rarity
-        this.broadcaster.broadcastMessage('setup_progress', { symbol, percent: 80, message: 'Updating Webhook...' });
-
-        const rarityOrder: Record<string, number> = { 'COMMON': 0, 'UNCOMMON': 1, 'RARE': 2, 'EPIC': 3, 'LEGENDARY': 4, 'MYTHIC': 5 };
-        const minRarityVal = rarityOrder[minRarity] || 0;
-
-        // Filter mints: Keep if tier >= minRarity
-        const filteredMints = scoredItems
-            .filter(item => {
-                const tierVal = rarityOrder[item.tier_statistical] || 0;
-                return tierVal >= minRarityVal;
-            })
-            .map(item => item.mint);
-
-        console.log(`[SetupManager] Filtered ${filteredMints.length} mints for webhook (Min: ${minRarity})`);
-
-        await this.updateHeliusWebhook(filteredMints);
-
-
-        // 6. Update Collections List
-        const collectionsPath = path.join(this.dataDir, 'collections.json');
-        let collections = [];
-        try {
-            if (fs.existsSync(collectionsPath)) {
-                collections = JSON.parse(fs.readFileSync(collectionsPath, 'utf-8'));
-            }
-        } catch (e) { }
-
-        // Remove existing if present
-        collections = collections.filter((c: any) => c.symbol !== symbol);
-        collections.push({
+        const newColMetadata = {
             symbol,
             name,
             address,
@@ -238,96 +233,259 @@ export class SetupManager {
             floorPrice: 0,
             count: totalItems,
             type: type,
-            minRarity // Store this preference
-        });
+            isSynced: false,
+            countWatched: 0,
+            filters: { minRarity: 'COMMON', traits: '' }
+        };
 
-        await fs.promises.writeFile(collectionsPath, JSON.stringify(collections, null, 2));
+        await this.collectionService.addCollection(newColMetadata);
 
-        // 7. Finish
-        this.collectionService.loadCollections();
-
+        // Finish
         this.broadcaster.broadcastMessage('setup_complete', { symbol, count: totalItems });
-        console.log(`[SetupManager] Setup complete for ${symbol}`);
+        console.log(`[SetupManager] Download complete for ${symbol}`);
     }
 
-    private async updateHeliusWebhook(newMints: string[]) {
+
+    /**
+     * Stage 2: Sync to Webhook
+     * Reads local DB, Filters Mints, Updates Helius (Smart Merge)
+     */
+    public async syncCollection(symbol: string, minRarity: string, traitsInput: any) {
+        console.log(`[SetupManager] Syncing ${symbol} (Min: ${minRarity}, Traits: ${traitsInput})...`);
+        const rarityOrder: Record<string, number> = { 'COMMON': 0, 'UNCOMMON': 1, 'RARE': 2, 'EPIC': 3, 'LEGENDARY': 4, 'MYTHIC': 5 };
+        const minRarityVal = rarityOrder[minRarity] || 0;
+
+        // 1. Parse Traits (Support both structured object and legacy string)
+        const traitReqs: Record<string, string[]> = {};
+        if (typeof traitsInput === 'object' && traitsInput !== null) {
+            // Structured Object format: { Type: [Val1, Val2] }
+            Object.keys(traitsInput).forEach(cat => {
+                const vals = traitsInput[cat];
+                if (Array.isArray(vals) && vals.length > 0) {
+                    traitReqs[cat.toLowerCase()] = vals.map(v => v.toLowerCase());
+                }
+            });
+        } else if (typeof traitsInput === 'string' && traitsInput.trim().length > 0) {
+            // Legacy String format: "Background: Red, Head: Crown"
+            const parts = traitsInput.split(',').map(s => s.trim());
+            for (const p of parts) {
+                if (p.includes(':')) {
+                    const [k, v] = p.split(':');
+                    const cat = k.trim().toLowerCase();
+                    if (!traitReqs[cat]) traitReqs[cat] = [];
+                    traitReqs[cat].push(v.trim().toLowerCase());
+                }
+            }
+        }
+
+        const hasTraitFilters = Object.keys(traitReqs).length > 0;
+
+        // 2. Load Local DB
+        const dbPath = path.join(this.dataDir, `${symbol}.json`);
+        if (!fs.existsSync(dbPath)) throw new Error(`Database for ${symbol} not found. Initialize first.`);
+        const db = JSON.parse(fs.readFileSync(dbPath, 'utf-8'));
+        const allCollectionMints = Object.keys(db);
+
+        // 3. Filter IDs
+        const newWatchList: string[] = [];
+        for (const mint of allCollectionMints) {
+            const item = db[mint];
+
+            // Rarity Check
+            const tierVal = rarityOrder[item.tier_statistical] || 0;
+            if (tierVal < minRarityVal) continue;
+
+            // Trait Check
+            if (hasTraitFilters) {
+                let anyMatch = false;
+                const itemAttrs = item.attributes || {};
+                // Normalize item attrs for check
+                const normAttrs: Record<string, string> = {};
+                Object.keys(itemAttrs).forEach(k => normAttrs[k.toLowerCase()] = itemAttrs[k].toString().toLowerCase());
+
+                for (const cat of Object.keys(traitReqs)) {
+                    const requiredValues = traitReqs[cat];
+                    const itemValue = normAttrs[cat];
+
+                    // Global OR: If we match ANY variation in ANY category, we take it
+                    if (itemValue && requiredValues.includes(itemValue)) {
+                        anyMatch = true;
+                        break;
+                    }
+                }
+                if (!anyMatch) continue;
+            }
+
+            newWatchList.push(mint);
+        }
+
+        console.log(`[SetupManager] Filtered ${newWatchList.length}/${allCollectionMints.length} items for ${symbol}`);
+
+        // 4. Helius Smart Merge
+        await this.smartUpdateWebhook(allCollectionMints, newWatchList);
+
+        await this.collectionService.updateCollection(symbol, {
+            isSynced: true,
+            countWatched: newWatchList.length,
+            filters: { minRarity, traits: traitsInput }
+        });
+
+        return { success: true, count: newWatchList.length };
+    }
+
+    private async smartUpdateWebhook(allMintsInCollection: string[], newMintsToWatch: string[]) {
         const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.PUBLIC_URL + '/webhook';
         if (!process.env.PUBLIC_URL && !process.env.WEBHOOK_URL) {
-            console.warn('[SetupManager] No WEBHOOK_URL defined. Skipping webhook update.');
+            console.warn('[SetupManager] No WEBHOOK_URL/PUBLIC_URL. Skipping Helius update.');
             return;
         }
 
+        // Normalize URL for matching (remove trailing slashes, ensure consistent protocol)
+        const normalizeUrl = (url: string) => url.toLowerCase().replace(/\/+$/, '').trim();
+        const normalizedTargetUrl = normalizeUrl(WEBHOOK_URL);
+
         try {
-            // 1. Get existing webhooks
+            console.log(`[SetupManager] Helius Sync Target: ${WEBHOOK_URL}`);
             const listResp = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${this.apiKey}`);
+            if (!listResp.ok) throw new Error(`Failed to list webhooks: ${listResp.status} ${listResp.statusText}`);
+
             const webhooks = await listResp.json() as any[];
+            let target = webhooks.find((w: any) => normalizeUrl(w.webhookURL) === normalizedTargetUrl);
 
-            let targetWebhook = webhooks.find((w: any) => w.webhookURL === WEBHOOK_URL);
+            let finalAddressList: string[] = [];
 
-            if (targetWebhook) {
-                // UPDATE existing
-                console.log(`[SetupManager] Updating existing webhook: ${targetWebhook.webhookID}`);
+            if (target) {
+                console.log(`[SetupManager] Found matching webhook ID: ${target.webhookID}`);
+                const detailResp = await fetch(`https://api.helius.xyz/v0/webhooks/${target.webhookID}?api-key=${this.apiKey}`);
+                if (!detailResp.ok) throw new Error(`Failed to fetch webhook details: ${detailResp.status} ${detailResp.statusText}`);
 
-                // Fetch FULL details to get accountAddresses (sometimes missing in list view)
-                try {
-                    const detailResp = await fetch(`https://api.helius.xyz/v0/webhooks/${targetWebhook.webhookID}?api-key=${this.apiKey}`);
-                    const detailData = await detailResp.json() as any;
-                    if (detailData && detailData.accountAddresses) {
-                        targetWebhook.accountAddresses = detailData.accountAddresses;
+                const detailData = await detailResp.json() as any;
+                const currentAddresses = detailData.accountAddresses || [];
+                console.log(`[SetupManager] Current Address Count: ${currentAddresses.length}`);
+
+                // 1. Remove ALL mints belonging to this collection
+                const collectionMintSet = new Set(allMintsInCollection);
+                const beforeCount = currentAddresses.length;
+                finalAddressList = currentAddresses.filter((addr: string) => !collectionMintSet.has(addr));
+                const removedCount = beforeCount - finalAddressList.length;
+                console.log(`[SetupManager] Removed ${removedCount} stale addresses. Remaining: ${finalAddressList.length}`);
+
+                // 2. Add NEW filtered mints
+                finalAddressList.push(...newMintsToWatch);
+                console.log(`[SetupManager] Final Count for Update: ${finalAddressList.length}`);
+
+                // 3. Handle Empty List (DELETE instead of PUT)
+                if (finalAddressList.length === 0) {
+                    console.log(`[SetupManager] No addresses remaining. Deleting Webhook ${target.webhookID}...`);
+                    const deleteResp = await fetch(`https://api.helius.xyz/v0/webhooks/${target.webhookID}?api-key=${this.apiKey}`, {
+                        method: 'DELETE'
+                    });
+                    if (!deleteResp.ok) {
+                        const errorText = await deleteResp.text();
+                        throw new Error(`Failed to delete empty webhook: ${deleteResp.status} ${errorText}`);
                     }
-                } catch (err) {
-                    console.warn('[SetupManager] Failed to fetch webhook details, assuming empty addresses.', err);
+                    console.log('[SetupManager] Helius Webhook Deleted Successfully.');
+                    return;
                 }
 
-                // Merge new mints with existing
-                const existingMints = new Set(targetWebhook.accountAddresses || []);
-                newMints.forEach(m => existingMints.add(m));
-                const updatedMints = Array.from(existingMints);
-
-                // Helius limit is 100k addresses per webhook usually.
-                if (updatedMints.length > 100000) {
-                    console.warn('[SetupManager] Warning: Webhook address count exceeding 100k. Truncating not implemented yet.');
-                }
-
-                await fetch(`https://api.helius.xyz/v0/webhooks/${targetWebhook.webhookID}?api-key=${this.apiKey}`, {
+                // Update
+                const updateResp = await fetch(`https://api.helius.xyz/v0/webhooks/${target.webhookID}?api-key=${this.apiKey}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         webhookURL: WEBHOOK_URL,
-                        transactionTypes: ['ANY'], // Raw webhook requires broadly compatible types
-                        accountAddresses: updatedMints,
-                        webhookType: 'raw', // Changed from 'enhanced' for speed
-                        txnStatus: 'success', // Only successful txns
-                        authHeader: process.env.HELIUS_AUTH_SECRET // <--- ADDED SECURITY HEADER
+                        transactionTypes: ['ANY'],
+                        accountAddresses: finalAddressList,
+                        webhookType: 'raw',
+                        txnStatus: 'success',
+                        authHeader: process.env.HELIUS_AUTH_SECRET
                     })
                 });
+                if (!updateResp.ok) {
+                    const errorText = await updateResp.text();
+                    throw new Error(`Failed to update webhook: ${updateResp.status} ${errorText}`);
+                }
 
             } else {
-                // CREATE new
-                console.log(`[SetupManager] Creating NEW webhook for ${WEBHOOK_URL}`);
-                await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${this.apiKey}`, {
+                console.log('[SetupManager] No existing webhook found for this URL. Creating new one...');
+                finalAddressList = newMintsToWatch;
+                const createResp = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${this.apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         webhookURL: WEBHOOK_URL,
                         transactionTypes: ['ANY'],
-                        accountAddresses: newMints,
+                        accountAddresses: finalAddressList,
                         webhookType: 'raw',
                         txnStatus: 'success',
-                        authHeader: process.env.HELIUS_AUTH_SECRET // <--- ADDED SECURITY HEADER
+                        authHeader: process.env.HELIUS_AUTH_SECRET
                     })
                 });
+                if (!createResp.ok) {
+                    const errorText = await createResp.text();
+                    throw new Error(`Failed to create webhook: ${createResp.status} ${errorText}`);
+                }
             }
-            console.log('[SetupManager] Webhook updated successfully.');
+
+            console.log('[SetupManager] Helius Webhook Synced Successfully.');
 
         } catch (e: any) {
-            console.error('[SetupManager] Failed to update Helius webhook:', e.message);
-            // Non-blocking error, but important (user wont get alerts if this fails)
-            this.broadcaster.broadcastMessage('setup_progress', {
-                symbol: 'WARN',
-                percent: 90,
-                message: 'Webhook update failed Check logs.'
-            });
+            console.error('[SetupManager] Webhook Sync Failed:', e.message);
+            throw new Error(`Webhook Sync Failed: ${e.message}`);
         }
     }
+
+    public async deleteCollectionData(symbol: string) {
+        // 0. Cleanup Helius Webhook FIRST while we still have the data file
+        const dataPath = path.join(this.dataDir, `${symbol}.json`);
+        if (fs.existsSync(dataPath)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+                const allMints = Object.keys(data);
+                console.log(`[SetupManager] Cleaning up ${allMints.length} addresses from Helius for ${symbol}...`);
+                await this.smartUpdateWebhook(allMints, []); // Remove all, add none
+            } catch (e) {
+                console.error(`[SetupManager] Error during Helius cleanup for ${symbol}:`, e);
+            }
+        }
+
+        // 1. Remove from CollectionService (handles memory + disk)
+        await this.collectionService.removeCollection(symbol);
+
+        // 2. Delete data file
+        if (fs.existsSync(dataPath)) {
+            try {
+                fs.unlinkSync(dataPath);
+            } catch (e) {
+                console.error(`[SetupManager] Error deleting ${symbol}.json:`, e);
+            }
+        }
+    }
+
+    public async markAsUnsynced(symbol: string) {
+        // 0. Cleanup Helius Webhook
+        const dataPath = path.join(this.dataDir, `${symbol}.json`);
+        if (fs.existsSync(dataPath)) {
+            try {
+                const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+                const allMints = Object.keys(data);
+                console.log(`[SetupManager] Removing ${symbol} from Helius webhook...`);
+                await this.smartUpdateWebhook(allMints, []); // Remove all from this collection
+            } catch (e) {
+                console.error(`[SetupManager] Error during Helius removal for ${symbol}:`, e);
+            }
+        }
+
+        await this.collectionService.updateCollection(symbol, {
+            isSynced: false,
+            countWatched: 0,
+            filters: {}
+        });
+    }
+
+    // For Manager View
+    public getManagerStats() {
+        return this.collectionService.getCollections();
+    }
+
 }

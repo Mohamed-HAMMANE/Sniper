@@ -20,8 +20,16 @@ export interface CollectionMetadata {
   symbol: string;
   name: string;
   image: string;
+  address?: string; // New: stored to allow re-downloads
   floorPrice?: number;
-  type?: 'core' | 'normal';
+  type?: 'core' | 'standard'; // Updated to match usage
+  isSynced?: boolean;
+  countWatched?: number;
+  count?: number; // Total items
+  filters?: {
+    minRarity?: string;
+    traits?: string | any[];
+  };
 }
 
 export interface Config {

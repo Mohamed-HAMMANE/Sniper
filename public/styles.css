@@ -352,6 +352,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  margin-top: 15px;
 }
 
 .section-title {
@@ -1293,12 +1294,12 @@ a.listing-image-wrapper:hover {
 /* ==================== TOAST ==================== */
 .toast-container {
   position: fixed;
-  bottom: 16px;
-  right: 16px;
+  bottom: 24px;
+  right: 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  z-index: 1000;
+  gap: 10px;
+  z-index: 9999;
 }
 
 .toast {
@@ -1475,6 +1476,7 @@ a.listing-image-wrapper:hover {
   font-weight: 600;
   background: linear-gradient(45deg, #fff, #a0a0ff);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -2348,4 +2350,201 @@ select.control-input-lg {
 /* Btn attrs flex */
 .btn-attrs {
   flex: 1;
+}
+
+/* ==================== COLLECTION MANAGER ==================== */
+.btn-setup-new {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent-light);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-setup-new:hover {
+  background: var(--accent);
+  color: white;
+  transform: translateY(-1px);
+}
+
+
+.sidebar-actions-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: relative;
+}
+
+.manage-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.manage-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.manager-content {
+  max-width: 900px;
+  width: 90vw;
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.manager-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.manager-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+}
+
+.manager-table th {
+  background: var(--bg-hover);
+  padding: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.manager-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.manager-table tr:hover {
+  background: var(--bg-elevated);
+}
+
+.col-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.col-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  background: var(--bg-base);
+  object-fit: cover;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-badge.synced {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-badge.unsynced {
+  background: rgba(251, 146, 60, 0.1);
+  color: #fb923c;
+  border: 1px solid rgba(251, 146, 60, 0.2);
+}
+
+.action-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-action-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 11px;
+}
+
+.btn-action-icon:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.btn-action-icon.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Sync Config Modal */
+.sync-content {
+  max-width: 450px;
+  max-height: 90vh;
+}
+
+/* Sync Modal Trait Selection */
+.trait-selection-group {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.trait-selection-summary {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-height: 20px;
+  line-height: 1.5;
+  font-family: var(--font-mono);
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.trait-selection-summary strong {
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.trait-selection-summary span {
+  background: var(--bg-surface-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  margin-bottom: 4px;
+  display: inline-block;
 }
