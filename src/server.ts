@@ -89,6 +89,9 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 // Initialize services
 const RPC_URL = process.env.RPC_URL || '';
+const PUBLIC_RPC_URL = process.env.PUBLIC_RPC_URL || '';
+
+// User guaranteed these are not empty, but we keep the warn just in case
 if (!RPC_URL) {
   console.warn('⚠️ Warning: RPC_URL is not defined in .env. Some features may not work.');
 }
@@ -97,7 +100,7 @@ const configManager = new ConfigManager();
 const cache = new ListingCache(60); // Cache for 60 minutes
 const collectionService = new CollectionService();
 const broadcaster = new SSEBroadcaster();
-const jitoService = new JitoService(RPC_URL);
+const jitoService = new JitoService(RPC_URL, PUBLIC_RPC_URL);
 
 // Start Jito Tip Warmer (Always Active)
 if (process.env.BURNER_WALLET_PRIVATE_KEY) {
@@ -119,7 +122,6 @@ if (process.env.BURNER_WALLET_PRIVATE_KEY) {
 // Start Connection Warmer (ME API)
 startConnectionWarmer();
 
-const PUBLIC_RPC_URL = process.env.PUBLIC_RPC_URL;
 const blockhashManager = new BlockhashManager(RPC_URL, PUBLIC_RPC_URL);
 const confirmationService = new ConfirmationService(RPC_URL, broadcaster, PUBLIC_RPC_URL);
 const balanceMonitor = new BalanceMonitor(RPC_URL, broadcaster, PUBLIC_RPC_URL);

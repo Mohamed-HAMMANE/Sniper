@@ -27,15 +27,19 @@ const JITO_URL = BLOCK_ENGINE_URLS.ny;
 export class JitoService {
     private rpcUrl: string;
     private connection: Connection;
+    private publicConnection: Connection | null = null;
     private cachedTipTx: string | null = null;
     private cachedBlockhash: string | null = null;
     private cachedTipLamports: number = 0;
 
-    constructor(rpcUrl: string) {
+    constructor(rpcUrl: string, publicRpcUrl?: string) {
         this.rpcUrl = rpcUrl;
-        // We need a connection to get latest blockhash for the tip tx
-        // Ideally this should be passed in or reused, but creating one for now is safe for low frequency
-        this.connection = new Connection(rpcUrl);
+        this.connection = new Connection(rpcUrl, 'confirmed');
+
+        if (publicRpcUrl) {
+            console.log(`[JitoService] Using Public RPC for Tip Warmer: ${publicRpcUrl}`);
+            this.publicConnection = new Connection(publicRpcUrl, 'confirmed');
+        }
     }
 
     private getRandomTipAccount(): PublicKey {
@@ -56,7 +60,9 @@ export class JitoService {
 
     private async updateCachedTip(signer: Keypair, tipLamports: number) {
         try {
-            const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+            // Use Public RPC if available, otherwise Main RPC
+            const conn = this.publicConnection || this.connection;
+            const { blockhash } = await conn.getLatestBlockhash('confirmed');
 
             // Build Tip Tx
             const tipAccount = this.getRandomTipAccount();
