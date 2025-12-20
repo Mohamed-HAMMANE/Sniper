@@ -421,6 +421,10 @@ function renderActiveTargets() {
     }).join('');
 
     card.innerHTML = `
+      <button class="btn-close-float" onclick="event.stopPropagation(); removeTarget('${target.symbol}')" title="Stop Watching">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
       <div class="target-card-header" onclick="toggleCardCollapse('${target.symbol}')">
         ${image
         ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openChart('${target.symbol}')">`
@@ -545,13 +549,10 @@ window.updateFilter = async function (symbol, filterId, field, value) {
 // Delete a specific filter
 window.deleteFilter = async function (symbol, filterId) {
   const target = activeTargets.find(t => t.symbol === symbol);
-  const filterCount = target?.filters?.length || 0;
+  // const filterCount = target?.filters?.length || 0;
 
-  const message = filterCount === 1
-    ? 'This is the last filter. Deleting it will remove the entire collection from watching. Continue?'
-    : 'Delete this filter?';
+  // Confirmation removed by user request
 
-  if (!confirm(message)) return;
 
   try {
     const res = await fetch(`/api/target/${symbol}/filter/${filterId}`, { method: 'DELETE' });
@@ -578,7 +579,8 @@ window.updateTarget = async function (symbol, field, value) {
 };
 
 window.removeTarget = async function (symbol) {
-  if (!confirm('Remove this collection from watching?')) return;
+  // Confirmation removed by user request
+
   try {
     const res = await fetch(`/api/target/${symbol}`, { method: 'DELETE' });
     if (res.ok) {
