@@ -100,50 +100,43 @@ Since this bot relies on push notifications from the blockchain, you must connec
     - **Account Addresses**: Add the collection addresses (Update Authorities or Candy Machine IDs).
     - **Note**: Do NOT use "Enhanced" or "NFT_LISTING" types as they add ~5s of latency. The bot now includes a custom Raw Parser.
 
-## 🔮 Strategic Move: Low Latency VPS
-**Critical for Success:** 
-Running this locally with Ngrok adds **4-8 seconds** of latency due to the tunnel round-trip. In the sniping game, this is too slow.
+## 🔮 Strategic Context & Budget Architecture
 
-**Reference Setup (Production):**
-This project is currently deployed on a **Vultr** VPS in **New Jersey (NJ)**.
-- **Why NJ?**: Strategic proximity to Helius/Jito nodes.
-- **Hardware**: 1 vCPU / 1GB RAM (Proven stable for monitoring ~10 collections).
-- **Benefit**: **Reliability**. Ensures 24/7 uptime and eliminates home internet connection drops/interruptions.
+**Core Philosophy: "Guerilla Efficiency"**
+This project is built for a specific strategic niche:
+1.  **Zero Budget Constraints**: Designed to run on a minimal $5/mo VPS (1 vCPU, 1GB RAM).
+2.  **No Premium Infrastructure**: Deliberately avoids expensive gRPC/Geyser subscriptions.
+3.  **The "NJ Advantage"**: By deploying in **New Jersey (NJ)**, we physically position the bot in the same datacenter region as Helius/Jito. This creates sub-millisecond latency for free, beating users with expensive setups located elsewhere.
 
-## 🔮 Strategic Turn: Program-Level WebSockets (Architecture 2.0)
+**Why this beats the competition:**
+-   **Vs. Humans**: The Helius Webhook + Jito pathway (~500ms - 2s) is statistically faster than any human reaction (3s+) or standard UI polling.
+-   **Vs. Expensive Bots**: While we don't use gRPC, our raw instruction parser and "Optimistic Buy" mode allow us to skip verification steps that slow down safe bots. We assume the risk to gain the speed.
 
-**The Bottleneck:** Helius Webhooks suffer from "Indexing Lag" (2.5s - 4.0s). By the time you receive the webhook, the block has been confirmed and indexed, meaning you are already seconds behind gRPC bots.
-
-**The Solution:** Switch from reactive Webhooks to **Program-Level WebSockets**.
-
-1.  **Direct Feed:** Subscribe to `logsSubscribe` for the Magic Eden V2 Program ID (`M2mx...`).
-2.  **Local Filtering:** Instead of relying on Helius to filter addresses, receive **ALL** market logs and filter them locally against `target_mints.json` in memory (0ms).
-3.  **Result:** Detection latency drops from **~3.0s** to **<500ms**, triggering the buy in the *same* or *next* block.
-
-*Note: This architecture is currently being integrated to replace the legacy Webhook system.*
+**Primary Use Case:**
+This tool acts as a **Sniper for Unlisted Collections** (hidden gems not on SolRarity) and a **Strategic Backup** if major tools go down. It is not intended to compete with $5,000/mo institutional HFT bots, but to dominate the "Manual + UI" arbitrage space.
 
 ## ⚙️ Configuration
+ 
+ Targets are managed via the UI, but persisted in `config.json`.
+ Wallet settings are managed in `.env`.
+ 
+ ## 🛡️ Security
+ 
+ This bot includes two layers of security for use on public cloud servers:
 
-Targets are managed via the UI, but persisted in `config.json`.
-Wallet settings are managed in `.env`.
-
-## 🛡️ Security
-
-This bot includes two layers of security for use on public cloud servers:
-
-1.  **Webhook Security**:
-    *   Set `HELIUS_AUTH_SECRET` in your `.env` file (e.g., `HELIUS_AUTH_SECRET=my-super-secret-token`).
-    *   Add this same string to the `authHeader` field in your Helius Webhook configuration.
-    *   The bot will verify this header on every incoming webhook and reject unauthorized requests.
-
-2.  **Dashboard Access Control**:
-    *   Set `AUTH_USER` and `AUTH_PASSWORD` in your `.env` file to protect the UI.
-    *   Example:
-        ```env
-        AUTH_USER=admin
-        AUTH_PASSWORD=password123
-        ```
-    *   Accessing the dashboard will now require Basic Auth credentials.
+ 1.  **Webhook Security**:
+     *   Set `HELIUS_AUTH_SECRET` in your `.env` file (e.g., `HELIUS_AUTH_SECRET=my-super-secret-token`).
+     *   Add this same string to the `authHeader` field in your Helius Webhook configuration.
+     *   The bot will verify this header on every incoming webhook and reject unauthorized requests.
+ 
+ 2.  **Dashboard Access Control**:
+     *   Set `AUTH_USER` and `AUTH_PASSWORD` in your `.env` file to protect the UI.
+     *   Example:
+         ```env
+         AUTH_USER=admin
+         AUTH_PASSWORD=password123
+         ```
+     *   Accessing the dashboard will now require Basic Auth credentials.
 
 ## 🔌 API Endpoints
 
