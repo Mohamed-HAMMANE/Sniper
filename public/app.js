@@ -429,18 +429,25 @@ function renderActiveTargets() {
 
         <div class="target-card-header" onclick="toggleCardCollapse('${target.symbol}')">
           ${image
-          ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openChart('${target.symbol}')">`
-          : `<div class="target-thumb-placeholder" onclick="event.stopPropagation(); openChart('${target.symbol}')">🎯</div>`
+          ? `<img src="${image}" class="target-thumb" alt="${name}" onclick="event.stopPropagation(); openExplorer('${target.symbol}')">`
+          : `<div class="target-thumb-placeholder" onclick="event.stopPropagation(); openExplorer('${target.symbol}')">🎯</div>`
         }
           <div class="target-title-group">
-            <span class="target-name" onclick="event.stopPropagation(); openChart('${target.symbol}')">${name}</span>
+            <span class="target-name" onclick="event.stopPropagation(); openExplorer('${target.symbol}')">${name}</span>
             <span class="target-floor-price">FP: ${fp ? fp.toFixed(3) : '—'}</span>
           </div>
-          <button class="btn-collapse" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="${isCollapsed ? 'M6 9l6 6 6-6' : 'M18 15l-6-6-6 6'}"/>
-            </svg>
-          </button>
+          <div class="target-header-actions">
+            <button class="btn-explore" onclick="event.stopPropagation(); openChart('${target.symbol}')" title="Price Chart">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 20V10M12 20V4M6 20v-6"></path>
+              </svg>
+            </button>
+            <button class="btn-collapse" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="${isCollapsed ? 'M6 9l6 6 6-6' : 'M18 15l-6-6-6 6'}"/>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="filters-container ${isCollapsed ? 'hidden' : ''}">
           ${filtersHtml}
@@ -1217,7 +1224,7 @@ function renderManagerTable() {
     tr.style.cursor = 'default';
     tr.innerHTML = `
       <td>
-        <div class="col-info">
+        <div class="col-info" onclick="openExplorer('${col.symbol}')" style="cursor: pointer;">
           <img src="${col.image}" class="col-thumb" onerror="this.style.display='none'">
           <div style="display:flex;flex-direction:column;">
             <span style="font-weight:600;font-size:12px;">${col.name}</span>
@@ -1387,3 +1394,271 @@ function updateLogicHelperText(mode) {
   }
 }
 
+// ==================== COLLECTION EXPLORER ====================
+let explorerData = {
+  symbol: '',
+  allItems: [],
+  filteredItems: [],
+  displayCount: 50,
+  sortMode: 'stat', // 'stat' or 'add'
+  traits: {}, // Full trait map for counts
+  activeFilters: {
+    search: '',
+    traits: {}, // cat -> [val1, val2]
+    traitCount: [] // [count1, count2]
+  }
+};
+
+window.openExplorer = async function (symbol) {
+  const modal = document.getElementById('explorer-modal');
+  const col = availableCollections.find(c => c.symbol === symbol);
+  if (!col) return;
+
+  // Reset State
+  explorerData = {
+    symbol: symbol,
+    allItems: [],
+    filteredItems: [],
+    displayCount: 50,
+    sortMode: 'stat',
+    traits: {},
+    activeFilters: { search: '', traits: {}, traitCount: [] }
+  };
+
+  // UI Feedback
+  document.getElementById('explorer-header-image').src = col.image;
+  document.getElementById('explorer-header-title').textContent = col.name;
+  document.getElementById('explorer-header-count').textContent = 'Loading...';
+  document.getElementById('explorer-grid').innerHTML = '<div class="loader">Loading Collection Database...</div>';
+  document.getElementById('explorer-search').value = '';
+  modal.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`/api/collection/${symbol}/items`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    const items = Object.entries(data.items).map(([mint, meta]) => ({ mint, ...meta }));
+    explorerData.allItems = items;
+
+    // Prepare Traits Map
+    const traitMap = {};
+    const traitCountMap = {};
+    items.forEach(item => {
+      const attrs = item.attributes || {};
+      const activeCount = Object.keys(attrs).length;
+      traitCountMap[activeCount] = (traitCountMap[activeCount] || 0) + 1;
+
+      Object.entries(attrs).forEach(([cat, val]) => {
+        if (!traitMap[cat]) traitMap[cat] = {};
+        traitMap[cat][val] = (traitMap[cat][val] || 0) + 1;
+      });
+    });
+
+    explorerData.traits = traitMap;
+    explorerData.traitItemCounts = traitCountMap;
+
+    renderExplorerSidebar();
+    updateExplorerFilters();
+    initExplorerInfiniteScroll();
+
+  } catch (e) {
+    showToast(`Explorer Error: ${e.message}`, 'error');
+    closeExplorer();
+  }
+};
+
+window.closeExplorer = function () {
+  document.getElementById('explorer-modal').classList.add('hidden');
+};
+
+function renderExplorerSidebar() {
+  const container = document.getElementById('explorer-traits-container');
+  const ctList = document.getElementById('explorer-trait-count-list');
+  container.innerHTML = '';
+  ctList.innerHTML = '';
+
+  // Render Trait Count Filters
+  Object.keys(explorerData.traitItemCounts).sort((a, b) => a - b).forEach(count => {
+    const div = document.createElement('label');
+    div.className = 'explorer-trait-item';
+    div.innerHTML = `
+            <input type="checkbox" onchange="toggleExplorerTraitCount(${count}, this.checked)">
+            <span>${count} Traits</span>
+            <span class="explorer-trait-count-badge">${explorerData.traitItemCounts[count]}</span>
+        `;
+    ctList.appendChild(div);
+  });
+
+  // Render Attribute Filters
+  Object.entries(explorerData.traits).sort((a, b) => a[0].localeCompare(b[0])).forEach(([cat, vals]) => {
+    const catDiv = document.createElement('div');
+    catDiv.className = 'explorer-trait-cat';
+
+    const header = document.createElement('div');
+    header.className = 'explorer-trait-cat-header';
+    header.innerHTML = `<span>${cat.toUpperCase()}</span> <span>▼</span>`;
+    header.onclick = () => catDiv.classList.toggle('collapsed');
+
+    const list = document.createElement('div');
+    list.className = 'explorer-trait-list';
+
+    Object.entries(vals).sort((a, b) => b[1] - a[1]).forEach(([val, count]) => {
+      const item = document.createElement('label');
+      item.className = 'explorer-trait-item';
+      item.innerHTML = `
+                <input type="checkbox" onchange="toggleExplorerTrait('${cat}', '${val}', this.checked)">
+                <span>${val}</span>
+                <span class="explorer-trait-count-badge">${count}</span>
+            `;
+      list.appendChild(item);
+    });
+
+    catDiv.appendChild(header);
+    catDiv.appendChild(list);
+    container.appendChild(catDiv);
+  });
+}
+
+window.toggleExplorerTrait = function (cat, val, checked) {
+  if (!explorerData.activeFilters.traits[cat]) explorerData.activeFilters.traits[cat] = [];
+  if (checked) explorerData.activeFilters.traits[cat].push(val);
+  else explorerData.activeFilters.traits[cat] = explorerData.activeFilters.traits[cat].filter(v => v !== val);
+
+  if (explorerData.activeFilters.traits[cat].length === 0) delete explorerData.activeFilters.traits[cat];
+  updateExplorerFilters();
+};
+
+window.toggleExplorerTraitCount = function (count, checked) {
+  if (checked) explorerData.activeFilters.traitCount.push(count);
+  else explorerData.activeFilters.traitCount = explorerData.activeFilters.traitCount.filter(v => v !== count);
+  updateExplorerFilters();
+};
+
+window.setExplorerSort = function (mode) {
+  explorerData.sortMode = mode;
+  document.getElementById('sort-stat').classList.toggle('active', mode === 'stat');
+  document.getElementById('sort-add').classList.toggle('active', mode === 'add');
+  updateExplorerFilters();
+};
+
+window.updateExplorerFilters = function () {
+  const search = document.getElementById('explorer-search').value.toLowerCase();
+  const activeTraits = explorerData.activeFilters.traits;
+  const activeCounts = explorerData.activeFilters.traitCount;
+
+  let filtered = explorerData.allItems.filter(item => {
+    // Search
+    if (search && !(item.name.toLowerCase().includes(search) || item.mint.toLowerCase().includes(search))) return false;
+
+    // Trait Count
+    const itemTraitCount = Object.keys(item.attributes || {}).length;
+    if (activeCounts.length > 0 && !activeCounts.includes(itemTraitCount)) return false;
+
+    // Attributes
+    for (const [cat, vals] of Object.entries(activeTraits)) {
+      const itemVal = item.attributes ? item.attributes[cat] : null;
+      if (!itemVal || !vals.includes(itemVal)) return false;
+    }
+
+    return true;
+  });
+
+  // Sort
+  const rankKey = explorerData.sortMode === 'stat' ? 'rank_statistical' : 'rank_additive';
+  filtered.sort((a, b) => (a[rankKey] || 99999) - (b[rankKey] || 99999));
+
+  explorerData.filteredItems = filtered;
+  explorerData.displayCount = 50;
+
+  document.getElementById('explorer-header-count').textContent = `${filtered.length.toLocaleString()} items`;
+  renderExplorerGrid();
+};
+
+function renderExplorerGrid() {
+  const container = document.getElementById('explorer-grid');
+  const loadMore = document.getElementById('explorer-load-more');
+  const items = explorerData.filteredItems.slice(0, explorerData.displayCount);
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty-explorer">No NFTs match your filters.</div>';
+    loadMore.classList.add('hidden');
+    return;
+  }
+
+  const rankKey = explorerData.sortMode === 'stat' ? 'rank_statistical' : 'rank_additive';
+  const tierKey = explorerData.sortMode === 'stat' ? 'tier_statistical' : 'tier_additive';
+
+  container.innerHTML = items.map(item => {
+    const rank = item[rankKey] || '???';
+    const tier = item[tierKey] || 'Common';
+    const score = explorerData.sortMode === 'stat' ? item.score_statistical : item.score_additive;
+    const scoreDisplay = explorerData.sortMode === 'stat' ? (score * 100).toFixed(4) + '%' : score.toFixed(2);
+
+    // Detect "Hidden Gems" (High rank diff)
+    const diff = Math.abs((item.rank_statistical || 0) - (item.rank_additive || 0));
+    const isHiddenGem = diff > (explorerData.allItems.length * 0.1); // Top 10% diff
+
+    return `
+            <div class="explorer-card ${isHiddenGem ? 'rank-glow-high' : ''}" title="Rank Dist: ${diff}" onclick="window.open('https://magiceden.io/item-details/${item.mint}', '_blank')">
+                <div class="explorer-card-img-wrap">
+                    <img src="${item.image}" loading="lazy" onerror="this.src='favicon.png'">
+                    <div class="explorer-card-badge ${tier.toLowerCase()}">${tier}</div>
+                    <span class="explorer-card-rank">#${rank}</span>
+                </div>
+                <div class="explorer-card-info">
+                    <div class="explorer-card-name">${item.name}</div>
+                    <div class="explorer-card-address-row">
+                        <span class="explorer-card-mint">${item.mint.slice(0, 4)}...${item.mint.slice(-4)}</span>
+                        <button class="btn-copy-address" onclick="event.stopPropagation(); copyAddress('${item.mint}')" title="Copy Address">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+  }).join('');
+
+  loadMore.classList.toggle('hidden', explorerData.displayCount >= explorerData.filteredItems.length);
+}
+
+window.loadMoreExplorerItems = function () {
+  explorerData.displayCount += 50;
+  renderExplorerGrid();
+};
+
+// --- Infinite Scroll Implementation ---
+let explorerObserver = null;
+function initExplorerInfiniteScroll() {
+  const sentinel = document.getElementById('explorer-load-more');
+  if (!sentinel) return;
+
+  if (explorerObserver) explorerObserver.disconnect();
+
+  explorerObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) {
+      if (explorerData.displayCount < explorerData.filteredItems.length) {
+        window.loadMoreExplorerItems();
+      }
+    }
+  }, {
+    root: document.querySelector('.explorer-main'),
+    rootMargin: '200px', // Start loading earlier
+    threshold: 0.1
+  });
+
+  explorerObserver.observe(sentinel);
+}
+
+// Close on background click
+document.getElementById('explorer-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'explorer-modal') closeExplorer();
+});
+
+window.copyAddress = function (text) {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Address copied!', 'success');
+  }).catch(err => {
+    console.error('Failed to copy: ', err);
+  });
+};

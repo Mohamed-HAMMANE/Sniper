@@ -216,4 +216,8 @@ export class CollectionService {
 
         return traits;
     }
+
+    public getFullDatabase(symbol: string): Record<string, ItemMetadata> | undefined {
+        return this.itemDatabases.get(symbol);
+    }
 }

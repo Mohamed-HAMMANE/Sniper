@@ -371,6 +371,14 @@ app.get('/api/traits/:symbol', (req, res) => {
   res.json({ success: true, traits });
 });
 
+// Get Full Collection Database (Explorer)
+app.get('/api/collection/:symbol/items', (req, res) => {
+  const { symbol } = req.params;
+  const db = collectionService.getFullDatabase(symbol);
+  if (!db) return res.status(404).json({ error: 'Collection database not found' });
+  res.json({ success: true, items: db });
+});
+
 // Webhook Endpoint for Helius
 app.post('/webhook', (req, res) => {
   // Acknowledge immediately

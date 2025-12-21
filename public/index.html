@@ -333,6 +333,69 @@
         </div>
     </div>
 
+    <!-- Collection Explorer Modal -->
+    <div id="explorer-modal" class="modal-overlay explorer-overlay hidden" style="z-index: 4000;">
+        <div class="explorer-content">
+            <div class="explorer-header-main">
+                <div class="explorer-title-group">
+                    <img id="explorer-header-image" src="" alt="" class="explorer-header-image">
+                    <div>
+                        <h2 id="explorer-header-title">Explorer</h2>
+                        <span id="explorer-header-count" class="explorer-header-count">0 items</span>
+                    </div>
+                </div>
+                <div class="explorer-header-actions">
+                    <div class="explorer-search-box">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" id="explorer-search" placeholder="Search by name or address..."
+                            oninput="updateExplorerFilters()">
+                    </div>
+                    <button class="modal-close" onclick="closeExplorer()">×</button>
+                </div>
+            </div>
+
+            <div class="explorer-body">
+                <!-- Sidebar Filters -->
+                <aside class="explorer-sidebar">
+                    <div class="explorer-sidebar-section">
+                        <div class="section-title">SORT BY</div>
+                        <div class="explorer-sort-grid">
+                            <button id="sort-stat" class="sort-btn active"
+                                onclick="setExplorerSort('stat')">Statistical</button>
+                            <button id="sort-add" class="sort-btn" onclick="setExplorerSort('add')">Additive</button>
+                        </div>
+                    </div>
+
+                    <div class="explorer-sidebar-section">
+                        <div class="section-title">TRAIT COUNT</div>
+                        <div id="explorer-trait-count-list" class="explorer-trait-count-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+
+                    <div id="explorer-traits-container">
+                        <!-- Trait categories populated by JS -->
+                    </div>
+                </aside>
+
+                <!-- Main Content (Grid) -->
+                <div class="explorer-main">
+                    <div id="explorer-grid" class="explorer-grid">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div id="explorer-load-more" class="load-more-container hidden">
+                        <!-- Infinite scroll sentinel -->
+                        <div class="loader-dots"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
 </body>
