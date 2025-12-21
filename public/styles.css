@@ -3000,3 +3000,67 @@ select.control-input-lg {
 .target-header-actions .btn-explore {
   margin-right: -4px;
 }
+/* ==================== SOLRARITY STYLE STEPPER ==================== */
+.stepper-control {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  height: 24px;
+}
+
+.stepper-btn {
+  background: var(--bg-hover);
+  border: none;
+  color: var(--text-secondary);
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.stepper-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.stepper-btn:active {
+  background: var(--accent-dim);
+}
+
+.stepper-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  min-width: 40px;
+}
+
+.stepper-value.infinite {
+  font-size: 14px;
+  color: var(--accent);
+  letter-spacing: 0;
+}
+
+.stepper-value:hover {
+  background: var(--bg-hover);
+}
+
+.stepper-value span {
+  pointer-events: none;
+}

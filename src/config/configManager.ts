@@ -47,7 +47,9 @@ export class ConfigManager {
       target.filters = target.filters.map((f: any) => ({
         ...f,
         id: f.id || generateId(),
-        autoBuy: f.autoBuy ?? false
+        autoBuy: f.autoBuy ?? false,
+        buyLimit: f.buyLimit,
+        buyCount: f.buyCount ?? 0
       }));
       return target;
     }
@@ -63,7 +65,9 @@ export class ConfigManager {
         minRarity: target.minRarity ?? 'COMMON',
         rarityType: target.rarityType ?? 'statistical',
         traitFilters: target.traitFilters,
-        autoBuy: target.autoBuy ?? false
+        autoBuy: target.autoBuy ?? false,
+        buyLimit: target.buyLimit,
+        buyCount: target.buyCount ?? 0
       }]
     };
   }
@@ -155,9 +159,26 @@ export class ConfigManager {
   }
 
   // Remove entire collection
-  public async removeTarget(symbol: string): Promise<void> {
-    if (!this.config.targets) return;
+  public async removeTarget(symbol: string): Promise<boolean> {
+    if (!this.config.targets) return false;
+    const initialLength = this.config.targets.length;
     this.config.targets = this.config.targets.filter(t => t.symbol !== symbol);
+    if (this.config.targets.length < initialLength) {
+      await this.saveConfig();
+      return true;
+    }
+    return false;
+  }
+
+  // Increment buy count for a specific filter
+  public async incrementBuyCount(symbol: string, filterId: string): Promise<void> {
+    const target = this.config.targets.find(t => t.symbol === symbol);
+    if (!target) return;
+
+    const filter = target.filters.find(f => f.id === filterId);
+    if (!filter) return;
+
+    filter.buyCount = (filter.buyCount || 0) + 1;
     await this.saveConfig();
   }
 

@@ -162,7 +162,7 @@ app.post('/api/balance/refresh', async (req, res) => {
 
 // Add target collection (with first filter)
 app.post('/api/target', async (req, res) => {
-  const { symbol, priceMax, minRarity, maxRank, rarityType, autoBuy, traitFilters, filters } = req.body;
+  const { symbol, priceMax, minRarity, maxRank, rarityType, autoBuy, buyLimit, traitFilters, filters } = req.body;
 
   // Support both old format (single filter params) and new format (filters array)
   if (filters && Array.isArray(filters)) {
@@ -187,7 +187,9 @@ app.post('/api/target', async (req, res) => {
       minRarity: minRarity || 'COMMON',
       rarityType: rarityType || 'statistical',
       traitFilters: traitFilters,
-      autoBuy: autoBuy === true
+      autoBuy: autoBuy === true,
+      buyLimit: buyLimit ? Number(buyLimit) : undefined,
+      buyCount: 0
     }]
   };
 
@@ -214,7 +216,7 @@ app.post('/api/target', async (req, res) => {
 // Add filter to existing collection
 app.post('/api/target/:symbol/filter', async (req, res) => {
   const { symbol } = req.params;
-  const { priceMax, maxRank, minRarity, rarityType, autoBuy, traitFilters, priorityFee } = req.body;
+  const { priceMax, maxRank, minRarity, rarityType, autoBuy, buyLimit, traitFilters, priorityFee } = req.body;
 
   const filter = await configManager.addFilter(symbol, {
     priceMax: Number(priceMax) || 1000,
@@ -223,7 +225,9 @@ app.post('/api/target/:symbol/filter', async (req, res) => {
     rarityType: rarityType || 'statistical',
     traitFilters,
     priorityFee: priorityFee ? Number(priorityFee) : undefined,
-    autoBuy: autoBuy === true
+    autoBuy: autoBuy === true,
+    buyLimit: buyLimit ? Number(buyLimit) : undefined,
+    buyCount: 0
   });
 
   if (!filter) {
@@ -242,6 +246,8 @@ app.put('/api/target/:symbol/filter/:filterId', async (req, res) => {
   if (updates.priceMax !== undefined) updates.priceMax = Number(updates.priceMax);
   if (updates.maxRank !== undefined) updates.maxRank = updates.maxRank ? Number(updates.maxRank) : undefined;
   if (updates.priorityFee !== undefined) updates.priorityFee = updates.priorityFee ? Number(updates.priorityFee) : undefined;
+  if (updates.buyLimit !== undefined) updates.buyLimit = updates.buyLimit ? Number(updates.buyLimit) : undefined;
+  if (updates.buyCount !== undefined) updates.buyCount = updates.buyCount ? Number(updates.buyCount) : 0;
 
   const success = await configManager.updateFilter(symbol, filterId, updates);
 
@@ -250,6 +256,7 @@ app.put('/api/target/:symbol/filter/:filterId', async (req, res) => {
   }
 
   res.json({ success: true, targets: configManager.getTargets() });
+  broadcaster.broadcastMessage('config_update', configManager.getTargets());
 });
 
 // Remove specific filter
@@ -465,6 +472,7 @@ app.post('/webhook', (req, res) => {
           let itemTierMax = itemTierStat;
 
           let maxPriorityFee: number | undefined = undefined;
+          let matchingFilterId: string | undefined = undefined;
 
           // Check each filter
           for (const filter of target.filters) {
@@ -520,7 +528,17 @@ app.post('/webhook', (req, res) => {
 
             // Upgrade to AutoBuy if this specific filter has it enabled
             if (filter.autoBuy) {
+              // NEW: Check Limit
+              const limit = filter.buyLimit || 0;
+              const count = filter.buyCount || 0;
+              if (limit > 0 && count >= limit) {
+                // console.log(`[Limit] Filter ${filter.id} for ${target.symbol} reached limit (${count}/${limit}). Skipping auto-buy.`);
+                continue;
+              }
+
               shouldAutoBuy = true;
+              if (!matchingFilterId) matchingFilterId = filter.id;
+
               // Capture max priority fee from any matching auto-buy filter
               if (filter.priorityFee) {
                 if (maxPriorityFee === undefined || filter.priorityFee > maxPriorityFee) {
@@ -558,7 +576,14 @@ app.post('/webhook', (req, res) => {
             if (shouldAutoBuy) {
               console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
               executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry, maxPriorityFee)
-                .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                .then(async sig => {
+                  if (sig === 'SKIPPED_DUPLICATE') return;
+                  console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                  if (matchingFilterId) {
+                    await configManager.incrementBuyCount(target.symbol, matchingFilterId);
+                    broadcaster.broadcastMessage('config_update', configManager.getTargets());
+                  }
+                })
                 .catch(err => {
                   if (err === 'SKIPPED_DUPLICATE') return;
                   console.error(`[AutoBuy] FAILED: ${err.message}`)
@@ -639,6 +664,8 @@ app.post('/webhook', (req, res) => {
               // We'll use these for the listing object
               let itemRankMax = itemRankStat;
               let itemTierMax = itemTierStat;
+              let maxPriorityFee: number | undefined = undefined;
+              let matchingFilterId: string | undefined = undefined;
 
               // Check each filter
               for (const filter of target.filters) {
@@ -685,7 +712,21 @@ app.post('/webhook', (req, res) => {
 
                 // Filter matched!
                 matchesAnyFilter = true;
-                if (filter.autoBuy) shouldAutoBuy = true;
+                if (filter.autoBuy) {
+                  const limit = filter.buyLimit || 0;
+                  const count = filter.buyCount || 0;
+                  if (limit > 0 && count >= limit) continue;
+
+                  shouldAutoBuy = true;
+                  if (!matchingFilterId) matchingFilterId = filter.id;
+
+                  // Capture max priority fee
+                  if (filter.priorityFee) {
+                    if (maxPriorityFee === undefined || filter.priorityFee > maxPriorityFee) {
+                      maxPriorityFee = filter.priorityFee;
+                    }
+                  }
+                }
               }
 
               if (matchesAnyFilter) {
@@ -714,8 +755,15 @@ app.post('/webhook', (req, res) => {
                 // Auto Buy (per filter)
                 if (shouldAutoBuy) {
                   console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
-                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0, undefined, true)
-                    .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                  executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0, maxPriorityFee, true)
+                    .then(async sig => {
+                      if (sig === 'SKIPPED_DUPLICATE') return;
+                      console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                      if (matchingFilterId) {
+                        await configManager.incrementBuyCount(collectionSymbol, matchingFilterId);
+                        broadcaster.broadcastMessage('config_update', configManager.getTargets());
+                      }
+                    })
                     .catch(err => {
                       if (err === 'SKIPPED_DUPLICATE') return;
                       console.error(`[AutoBuy] FAILED: ${err.message}`)
@@ -868,6 +916,7 @@ app.post('/webhook', (req, res) => {
 
                 // Check each filter
                 let maxPriorityFee: number | undefined = undefined;
+                let matchingFilterId: string | undefined = undefined;
 
                 for (const filter of target.filters) {
                   // Price Check
@@ -921,7 +970,13 @@ app.post('/webhook', (req, res) => {
                   }
 
                   if (filter.autoBuy) {
+                    const limit = filter.buyLimit || 0;
+                    const count = filter.buyCount || 0;
+                    if (limit > 0 && count >= limit) continue;
+
                     shouldAutoBuy = true;
+                    if (!matchingFilterId) matchingFilterId = filter.id;
+
                     // Capture max priority fee from any matching auto-buy filter
                     if (filter.priorityFee) {
                       if (maxPriorityFee === undefined || filter.priorityFee > maxPriorityFee) {
@@ -958,9 +1013,16 @@ app.post('/webhook', (req, res) => {
 
                   // Auto Buy (per filter)
                   if (shouldAutoBuy) {
-                    console.log(`[AutoBuy] Triggered (RAW) for ${itemMeta.name} @ ${price} SOL`);
+                    console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via RAW parsing)`);
                     executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry, maxPriorityFee)
-                      .then(sig => console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`))
+                      .then(async sig => {
+                        if (sig === 'SKIPPED_DUPLICATE') return;
+                        console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                        if (matchingFilterId) {
+                          await configManager.incrementBuyCount(target.symbol, matchingFilterId);
+                          broadcaster.broadcastMessage('config_update', configManager.getTargets());
+                        }
+                      })
                       .catch(err => {
                         if (err === 'SKIPPED_DUPLICATE') return;
                         console.error(`[AutoBuy] FAILED: ${err.message}`)

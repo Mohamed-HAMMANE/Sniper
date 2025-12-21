@@ -99,6 +99,11 @@ function connectSSE() {
     else if (msg.type === 'balanceUpdate') {
       updateBalanceDisplay(msg.data.balance);
     }
+    else if (msg.type === 'config_update') {
+      activeTargets = msg.data;
+      renderActiveTargets();
+      updateWatchCount();
+    }
     else if (msg.type === 'setup_progress') handleSetupProgress(msg.data);
     else if (msg.type === 'setup_complete') handleSetupComplete(msg.data);
     else if (msg.type === 'setup_error') handleSetupError(msg.data);
@@ -406,6 +411,19 @@ function renderActiveTargets() {
             </div>
 
             <div class="filter-row">
+              <span class="filter-row-label">BUY LIMIT</span>
+              <div class="stepper-control">
+                <button class="stepper-btn" onclick="decrementLimit('${target.symbol}', '${filter.id}')">−</button>
+                <div class="stepper-value ${!filter.buyLimit ? 'infinite' : ''}" 
+                  onclick="resetBuyCount('${target.symbol}', '${filter.id}')" 
+                  title="Click to Reset Count">
+                  ${!filter.buyLimit ? '∞' : (filter.buyCount || 0) + ' / ' + filter.buyLimit}
+                </div>
+                <button class="stepper-btn" onclick="incrementLimit('${target.symbol}', '${filter.id}')">+</button>
+              </div>
+            </div>
+
+            <div class="filter-row">
               <span class="filter-row-label">JITO FEE (SOL)</span>
               <div class="filter-row-input">
                 <input type="number" class="control-input" value="${filter.priorityFee || ''}" step="0.0001" placeholder="${window.defaultPriorityFee || '0.0005'}"
@@ -544,16 +562,26 @@ window.updateFilter = async function (symbol, filterId, field, value) {
 
   // Update local state
   if (field === 'priceMax' || field === 'priorityFee') filter[field] = parseFloat(value) || undefined;
-  else if (field === 'maxRank') filter.maxRank = value ? parseInt(value) : undefined;
+  else if (field === 'maxRank' || field === 'buyLimit') filter[field] = value ? parseInt(value) : undefined;
   else filter[field] = value;
 
   try {
+    const payload = {};
+    if (field === 'priceMax' || field === 'priorityFee') payload[field] = parseFloat(value) || null;
+    else if (field === 'maxRank' || field === 'buyLimit') payload[field] = value ? parseInt(value) : null;
+    else payload[field] = value;
+
     const res = await fetch(`/api/target/${symbol}/filter/${filterId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: (field === 'priceMax' || field === 'priorityFee') ? (parseFloat(value) || undefined) : (field === 'maxRank' ? (value ? parseInt(value) : null) : value) })
+      body: JSON.stringify(payload)
     });
-    if (res.ok) showToast('Saved', 'success');
+    if (res.ok) {
+      const data = await res.json();
+      activeTargets = data.targets;
+      renderActiveTargets();
+      showToast('Saved', 'success');
+    }
   } catch (e) {
     showToast('Error saving', 'error');
   }
@@ -580,6 +608,36 @@ window.deleteFilter = async function (symbol, filterId) {
     showToast('Error', 'error');
   }
 };
+
+// ==================== STEPPER LOGIC ====================
+window.incrementLimit = function (symbol, filterId) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  const filter = target?.filters.find(f => f.id === filterId);
+  const currentLimit = filter?.buyLimit || 0;
+
+  // If 0 (Infinite), go to 1. Else increment.
+  const newVal = currentLimit === 0 ? 1 : currentLimit + 1;
+  updateFilter(symbol, filterId, 'buyLimit', newVal);
+};
+
+window.decrementLimit = function (symbol, filterId) {
+  const target = activeTargets.find(t => t.symbol === symbol);
+  const filter = target?.filters.find(f => f.id === filterId);
+  const currentLimit = filter?.buyLimit || 0;
+
+  // If 0 (Infinite), do nothing or loop? SolRarity logic usually: 
+  // If 1, go to 0 (Infinite). If > 1, decrement.
+  if (currentLimit === 0) return;
+  const newVal = currentLimit === 1 ? 0 : currentLimit - 1;
+  updateFilter(symbol, filterId, 'buyLimit', newVal === 0 ? '' : newVal);
+};
+
+window.resetBuyCount = function (symbol, filterId) {
+  if (confirm('Reset buy count to 0?')) {
+    updateFilter(symbol, filterId, 'buyCount', 0);
+  }
+};
+
 
 // Legacy update target (for backward compatibility during migration)
 window.updateTarget = async function (symbol, field, value) {

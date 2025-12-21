@@ -8,6 +8,8 @@ export interface FilterRule {
   traitFilters?: Record<string, string[]>;  // e.g. { "Background": ["Red", "Blue"] }
   priorityFee?: number;                     // Optional custom priority fee in SOL
   autoBuy: boolean;
+  buyLimit?: number;                        // New: Max number of NFTs to buy with this filter
+  buyCount?: number;                        // New: Current number of NFTs bought with this filter
 }
 
 export interface TargetCollection {
