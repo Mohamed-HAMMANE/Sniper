@@ -250,8 +250,8 @@ export class SetupManager {
      * Stage 2: Sync to Webhook
      * Reads local DB, Filters Mints, Updates Helius (Smart Merge)
      */
-    public async syncCollection(symbol: string, minRarity: string, traitsInput: any) {
-        console.log(`[SetupManager] Syncing ${symbol} (Min: ${minRarity}, Traits: ${traitsInput})...`);
+    public async syncCollection(symbol: string, minRarity: string, traitsInput: any, logicMode: 'AND' | 'OR' = 'AND') {
+        console.log(`[SetupManager] Syncing ${symbol} (Min: ${minRarity}, Traits: ${traitsInput}, Logic: ${logicMode})...`);
         const rarityOrder: Record<string, number> = { 'COMMON': 0, 'UNCOMMON': 1, 'RARE': 2, 'EPIC': 3, 'LEGENDARY': 4, 'MYTHIC': 5 };
         const minRarityVal = rarityOrder[minRarity] || 0;
 
@@ -293,11 +293,11 @@ export class SetupManager {
 
             // Rarity Check
             const tierVal = rarityOrder[item.tier_statistical] || 0;
-            if (tierVal < minRarityVal) continue;
+            const matchesRarity = tierVal >= minRarityVal;
 
             // Trait Check
+            let matchesTraits = false;
             if (hasTraitFilters) {
-                let anyMatch = false;
                 const itemAttrs = item.attributes || {};
                 // Normalize item attrs for check
                 const normAttrs: Record<string, string> = {};
@@ -307,16 +307,33 @@ export class SetupManager {
                     const requiredValues = traitReqs[cat];
                     const itemValue = normAttrs[cat];
 
-                    // Global OR: If we match ANY variation in ANY category, we take it
+                    // Global OR: If we match ANY variation in ANY category, we see it as a "Trait Match"
                     if (itemValue && requiredValues.includes(itemValue)) {
-                        anyMatch = true;
+                        matchesTraits = true;
                         break;
                     }
                 }
-                if (!anyMatch) continue;
             }
 
-            newWatchList.push(mint);
+            // FINAL LOGIC DECISION
+            let shouldKeep = false;
+
+            if (logicMode === 'OR') {
+                // Keep if matches Rarity OR matches Traits
+                // But wait, if NO traits are selected, "matchesTraits" is false.
+                // If logic is OR, and I select RARE, I get RARE.
+                // If I select RARE + GOLD SKIN: I get (RARE) OR (GOLD SKIN aka Common Gold Skin). Correct.
+                shouldKeep = matchesRarity || matchesTraits;
+            } else {
+                // AND (Default)
+                // Must match Rarity.
+                // AND if traits are specified, must match traits.
+                shouldKeep = matchesRarity && (!hasTraitFilters || matchesTraits);
+            }
+
+            if (shouldKeep) {
+                newWatchList.push(mint);
+            }
         }
 
         console.log(`[SetupManager] Filtered ${newWatchList.length}/${allCollectionMints.length} items for ${symbol}`);
@@ -327,7 +344,7 @@ export class SetupManager {
         await this.collectionService.updateCollection(symbol, {
             isSynced: true,
             countWatched: newWatchList.length,
-            filters: { minRarity, traits: traitsInput }
+            filters: { minRarity, traits: traitsInput, logicMode }
         });
 
         return { success: true, count: newWatchList.length };
@@ -409,6 +426,12 @@ export class SetupManager {
             } else {
                 console.log('[SetupManager] No existing webhook found for this URL. Creating new one...');
                 finalAddressList = newMintsToWatch;
+
+                if (finalAddressList.length === 0) {
+                    console.log('[SetupManager] No addresses to watch. Skipping webhook creation.');
+                    return;
+                }
+
                 const createResp = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${this.apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -478,8 +501,7 @@ export class SetupManager {
 
         await this.collectionService.updateCollection(symbol, {
             isSynced: false,
-            countWatched: 0,
-            filters: {}
+            countWatched: 0
         });
     }
 

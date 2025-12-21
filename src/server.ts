@@ -192,6 +192,22 @@ app.post('/api/target', async (req, res) => {
   };
 
   await configManager.addTarget(target);
+
+  // SMART RESTORE: If collection exists but is unsynced (removed from Helius), try to re-sync using saved filters
+  const colMeta = collectionService.getCollection(symbol);
+  if (colMeta && !colMeta.isSynced && colMeta.filters && colMeta.filters.minRarity) {
+    console.log(`[SmartRestore] Restoring Helius sync for ${symbol} using saved filters...`);
+    // Run in background to not block UI? Or await to ensure it works? 
+    // Await is safer to ensure webhooks are ready before we say "Success"
+    try {
+      await setupManager.syncCollection(symbol, colMeta.filters.minRarity, colMeta.filters.traits, colMeta.filters.logicMode || 'AND');
+      console.log(`[SmartRestore] ${symbol} re-synced successfully.`);
+    } catch (e) {
+      console.error(`[SmartRestore] Failed to re-sync ${symbol}:`, e);
+      // We still return success for the "Watch" action, but maybe include a warning?
+    }
+  }
+
   res.json({ success: true, targets: configManager.getTargets() });
 });
 
@@ -318,21 +334,24 @@ app.post('/api/setup/init', async (req, res) => {
 
 // Setup: Sync (Update Webhook)
 app.post('/api/setup/sync', async (req, res) => {
-  const { symbol, minRarity, traits } = req.body;
+  const { symbol, minRarity, traits, logicMode } = req.body;
   if (!symbol) return res.status(400).json({ error: 'Missing symbol' });
 
   try {
-    const result = await setupManager.syncCollection(symbol, minRarity || 'COMMON', traits || '');
+    const result = await setupManager.syncCollection(symbol, minRarity || 'COMMON', traits || '', logicMode || 'AND');
 
     // Auto-add to sidebar if not already present
     const existing = configManager.getTargets().find(t => t.symbol === symbol);
     if (!existing) {
+      console.log(`[AutoAdd] Adding ${symbol} to sidebar after sync...`);
       await configManager.addTarget({
         symbol,
         filters: [{
           id: 'default',
-          priceMax: 10,
-          minRarity: minRarity || 'COMMON',
+          priceMax: 1000,
+          minRarity: 'COMMON',
+          rarityType: "statistical",
+          //traitFilters: typeof traits === 'object' ? traits : undefined, // Rudimentary trait mapping
           autoBuy: false
         }]
       });
@@ -975,9 +994,13 @@ setInterval(async () => {
       try {
         const newFloor = await floorPriceManager.fetchFloorPrice(target.symbol);
         if (newFloor !== null) {
-          await historyService.addPoint(target.symbol, newFloor);
-          collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
-          broadcaster.broadcastMessage('floorPriceUpdate', { symbol: target.symbol, floorPrice: newFloor });
+          // Check if changed
+          const current = collectionService.getCollection(target.symbol);
+          if (current && Math.abs((current.floorPrice || 0) - newFloor) > 0.000001) {
+            await historyService.addPoint(target.symbol, newFloor);
+            collectionService.updateCollection(target.symbol, { floorPrice: newFloor });
+            broadcaster.broadcastMessage('floorPriceUpdate', { symbol: target.symbol, floorPrice: newFloor });
+          }
         }
       } catch (err) {
         console.error(`Error updating floor for ${target.symbol}:`, err);

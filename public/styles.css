@@ -2124,6 +2124,42 @@ select.control-input-lg {
   background: #ef4444;
 }
 
+.inline-rarity-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+  letter-spacing: 0.5px;
+}
+
+.inline-rarity-pill.common {
+  background: #64748b;
+}
+
+.inline-rarity-pill.uncommon {
+  background: #10b981;
+}
+
+.inline-rarity-pill.rare {
+  background: #3b82f6;
+}
+
+.inline-rarity-pill.epic {
+  background: #8b5cf6;
+}
+
+.inline-rarity-pill.legendary {
+  background: #f59e0b;
+}
+
+.inline-rarity-pill.mythic {
+  background: #ef4444;
+}
+
 /* Attributes Button */
 .btn-attrs {
   background: var(--bg-base);
@@ -2196,6 +2232,48 @@ select.control-input-lg {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--accent-light);
+}
+
+/* Filter Logic Toggle (Pill Shape) */
+.logic-toggle-container {
+  display: flex;
+  background: #1a1a2e;
+  /* Dark background matching input fields usually */
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.logic-toggle-option {
+  flex: 1;
+  text-align: center;
+  padding: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #888;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.logic-toggle-option:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.logic-toggle-option.active {
+  background: #8b5cf6;
+  /* Purple matching the provided image/theme */
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);
+}
+
+.helper-text {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 6px;
+  margin-left: 2px;
 }
 
 .btn-add-filter svg {

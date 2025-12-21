@@ -1190,7 +1190,7 @@ function renderManagerTable() {
     const rarityBadge = !isSynced
       ? '<span style="color:var(--text-muted);font-size:10px;">-</span>'
       : (filters.minRarity && filters.minRarity !== 'COMMON'
-        ? `<span class="rarity-badge-inline ${filters.minRarity.toLowerCase()}">${filters.minRarity}</span>`
+        ? `<span class="inline-rarity-pill ${filters.minRarity.toLowerCase()}">${filters.minRarity}</span>`
         : '<span style="color:var(--text-muted);font-size:10px;">All</span>');
 
     // Handle traits display and serialization
@@ -1240,7 +1240,7 @@ function renderManagerTable() {
       </td>
       <td>
         <div class="action-btn-group">
-          <button class="btn-action-icon" title="Configure & Sync" onclick="openSyncConfig('${col.symbol}', '${filters.minRarity || 'COMMON'}', '${safeTraits}')">
+          <button class="btn-action-icon" title="Configure & Sync" onclick="openSyncConfig('${col.symbol}', '${filters.minRarity || 'COMMON'}', '${safeTraits}', '${filters.logicMode || 'AND'}')">
             ⚙️ Setup
           </button>
           <button class="btn-action-icon danger" title="Delete" onclick="deleteCollection('${col.symbol}')">
@@ -1275,7 +1275,7 @@ window.deleteCollection = async function (symbol) {
 }
 
 // ==================== SYNC CONFIG ====================
-window.openSyncConfig = function (symbol, currentRarity, currentTraits) {
+window.openSyncConfig = function (symbol, currentRarity, currentTraits, currentLogicMode) {
   const modal = document.getElementById('sync-modal');
   modal.classList.remove('hidden');
 
@@ -1305,6 +1305,14 @@ window.openSyncConfig = function (symbol, currentRarity, currentTraits) {
     } catch (e) { console.warn('Error parsing traits:', e); }
   }
   updateSyncTraitSummary();
+
+  // Set Logic Toggle
+  const logicMode = currentLogicMode || 'AND';
+  document.querySelectorAll('.logic-toggle-option').forEach(el => {
+    if (el.dataset.value === logicMode) el.classList.add('active');
+    else el.classList.remove('active');
+  });
+  updateLogicHelperText(logicMode);
 }
 
 window.closeSyncModal = function () {
@@ -1320,10 +1328,13 @@ window.startSync = async function () {
   btn.textContent = 'Syncing...';
 
   try {
+    // Get Logic Mode
+    const logicMode = document.querySelector('.logic-toggle-option.active').dataset.value;
+
     const res = await fetch('/api/setup/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, minRarity, traits: syncTraitFilters })
+      body: JSON.stringify({ symbol, minRarity, traits: syncTraitFilters, logicMode })
     });
 
     const data = await res.json();
@@ -1357,4 +1368,22 @@ document.getElementById('manager-modal').addEventListener('click', (e) => {
 document.getElementById('sync-modal').addEventListener('click', (e) => {
   if (e.target.id === 'sync-modal') closeSyncModal();
 });
+
+// Logic Toggle Handler
+document.getElementById('logic-toggle').addEventListener('click', (e) => {
+  if (e.target.classList.contains('logic-toggle-option')) {
+    document.querySelectorAll('.logic-toggle-option').forEach(el => el.classList.remove('active'));
+    e.target.classList.add('active');
+    updateLogicHelperText(e.target.dataset.value);
+  }
+});
+
+function updateLogicHelperText(mode) {
+  const el = document.getElementById('logic-helper-text');
+  if (mode === 'OR') {
+    el.innerHTML = 'Matches Min Rarity <b>OR</b> Selected Traits (Inclusive).';
+  } else {
+    el.innerHTML = 'Matches Min Rarity <b>AND</b> Selected Traits (Restrictive).';
+  }
+}
 

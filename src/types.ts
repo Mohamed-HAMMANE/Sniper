@@ -29,6 +29,7 @@ export interface CollectionMetadata {
   filters?: {
     minRarity?: string;
     traits?: string | any[];
+    logicMode?: 'AND' | 'OR';
   };
 }
 
