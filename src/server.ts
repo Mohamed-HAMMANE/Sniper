@@ -575,11 +575,11 @@ app.post('/webhook', (req, res) => {
             broadcaster.broadcastListing(listing);
 
             if (shouldAutoBuy) {
-              logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
+              logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${priceSol} SOL. Sending...`);
               executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry, maxPriorityFee)
                 .then(async sig => {
                   if (sig === 'SKIPPED_DUPLICATE') return;
-                  logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
+                  logger.info(`AutoBuy CONFIRMED! Sig: ${sig}`);
                   if (matchingFilterId) {
                     await configManager.incrementBuyCount(target.symbol, matchingFilterId);
                     broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -755,11 +755,11 @@ app.post('/webhook', (req, res) => {
 
                 // Auto Buy (per filter)
                 if (shouldAutoBuy) {
-                  logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
+                  logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing). Sending...`);
                   executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0, maxPriorityFee, true)
                     .then(async sig => {
                       if (sig === 'SKIPPED_DUPLICATE') return;
-                      logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
+                      logger.info(`AutoBuy CONFIRMED! Sig: ${sig}`);
                       if (matchingFilterId) {
                         await configManager.incrementBuyCount(collectionSymbol, matchingFilterId);
                         broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -1014,11 +1014,11 @@ app.post('/webhook', (req, res) => {
 
                   // Auto Buy (per filter)
                   if (shouldAutoBuy) {
-                    logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via RAW parsing)`);
+                    logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via RAW parsing). Sending...`);
                     executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry, maxPriorityFee)
                       .then(async sig => {
                         if (sig === 'SKIPPED_DUPLICATE') return;
-                        logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
+                        logger.info(`AutoBuy CONFIRMED! Sig: ${sig}`);
                         if (matchingFilterId) {
                           await configManager.incrementBuyCount(target.symbol, matchingFilterId);
                           broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -1305,9 +1305,12 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
       }
     }
 
-    // Monitor
-    confirmationService.monitor(signature, 'Buy Now');
-    // balanceMonitor.decreaseBalance(price); // Moved to start (Optimistic)
+    // 6. MONITOR & CONFIRM (The "Reliability Hack")
+    const isConfirmed = await confirmationService.monitor(signature, 'Buy Now');
+
+    if (!isConfirmed) {
+      throw new Error('Transaction failed to confirm on-chain (Timeout or Error)');
+    }
 
     return signature;
 
