@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CollectionService } from './collectionService';
 import { SSEBroadcaster } from '../api/sseEndpoint';
+import { logger } from '../utils/logger';
 
 export class SetupManager {
     private apiKey: string;
@@ -27,13 +28,13 @@ export class SetupManager {
      */
     public async downloadAndAnalyze(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core') {
         this.runDownloadProcess(symbol, address, name, image, type).catch(err => {
-            console.error(`[SetupManager] Download failed for ${symbol}:`, err);
+            logger.error(`SetupManager: Download failed for ${symbol}:`, err);
             this.broadcaster.broadcastMessage('setup_error', { symbol, error: err.message });
         });
     }
 
     private async runDownloadProcess(symbol: string, address: string, name: string, image: string, type: 'standard' | 'core') {
-        console.log(`[SetupManager] Starting download for ${symbol}...`);
+        logger.info(`SetupManager: Starting download for ${symbol}...`);
         this.broadcaster.broadcastMessage('setup_progress', { symbol, percent: 0, message: 'Starting download...' });
 
         // 1. Download All Items
@@ -68,7 +69,7 @@ export class SetupManager {
                     const result = data.result;
 
                     if (!result?.items) {
-                        console.error('[SetupManager] Malformed Helius response:', data);
+                        logger.error('SetupManager: Malformed Helius response:', data);
                         throw new Error('Malformed Helius response');
                     }
 
@@ -86,7 +87,7 @@ export class SetupManager {
 
                 } catch (e: any) {
                     attempt++;
-                    console.error(`[SetupManager] Fetch error (Page ${page}, Attempt ${attempt}):`, e.message);
+                    logger.error(`SetupManager: Fetch error (Page ${page}, Attempt ${attempt}):`, e.message);
                     if (attempt >= maxRetries) throw new Error(`Helius API Fetch Failure after ${maxRetries} retries: ${e.message}`);
                     await new Promise(r => setTimeout(r, 1000 * attempt));
                 }
@@ -96,7 +97,7 @@ export class SetupManager {
             // The throw is inside the catch block, so execution bubbles up.
         }
 
-        console.log(`[SetupManager] Downloaded ${allItems.length} items.`);
+        logger.info(`SetupManager: Downloaded ${allItems.length} items.`);
         this.broadcaster.broadcastMessage('setup_progress', { symbol, percent: 50, message: `Analyzing ${allItems.length} items...` });
 
         // 2. Normalize Traits & Calculate Rarity
@@ -242,7 +243,7 @@ export class SetupManager {
 
         // Finish
         this.broadcaster.broadcastMessage('setup_complete', { symbol, count: totalItems });
-        console.log(`[SetupManager] Download complete for ${symbol}`);
+        logger.info(`SetupManager: Download complete for ${symbol}`);
     }
 
 
@@ -251,7 +252,7 @@ export class SetupManager {
      * Reads local DB, Filters Mints, Updates Helius (Smart Merge)
      */
     public async syncCollection(symbol: string, minRarity: string, traitsInput: any, logicMode: 'AND' | 'OR' = 'AND') {
-        console.log(`[SetupManager] Syncing ${symbol} (Min: ${minRarity}, Traits: ${traitsInput}, Logic: ${logicMode})...`);
+        logger.info(`SetupManager: Syncing ${symbol} (Min: ${minRarity}, logic: ${logicMode})...`);
         const rarityOrder: Record<string, number> = { 'COMMON': 0, 'UNCOMMON': 1, 'RARE': 2, 'EPIC': 3, 'LEGENDARY': 4, 'MYTHIC': 5 };
         const minRarityVal = rarityOrder[minRarity] || 0;
 
@@ -336,7 +337,7 @@ export class SetupManager {
             }
         }
 
-        console.log(`[SetupManager] Filtered ${newWatchList.length}/${allCollectionMints.length} items for ${symbol}`);
+        logger.debug(`SetupManager: Filtered ${newWatchList.length}/${allCollectionMints.length} items for ${symbol}`);
 
         // 4. Helius Smart Merge
         await this.smartUpdateWebhook(allCollectionMints, newWatchList);
@@ -353,7 +354,7 @@ export class SetupManager {
     private async smartUpdateWebhook(allMintsInCollection: string[], newMintsToWatch: string[]) {
         const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.PUBLIC_URL + '/webhook';
         if (!process.env.PUBLIC_URL && !process.env.WEBHOOK_URL) {
-            console.warn('[SetupManager] No WEBHOOK_URL/PUBLIC_URL. Skipping Helius update.');
+            logger.warn('SetupManager: No WEBHOOK_URL/PUBLIC_URL. Skipping Helius update.');
             return;
         }
 
@@ -362,7 +363,7 @@ export class SetupManager {
         const normalizedTargetUrl = normalizeUrl(WEBHOOK_URL);
 
         try {
-            console.log(`[SetupManager] Helius Sync Target: ${WEBHOOK_URL}`);
+            logger.debug(`SetupManager: Helius Sync Target: ${WEBHOOK_URL}`);
             const listResp = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${this.apiKey}`);
             if (!listResp.ok) throw new Error(`Failed to list webhooks: ${listResp.status} ${listResp.statusText}`);
 
@@ -372,28 +373,28 @@ export class SetupManager {
             let finalAddressList: string[] = [];
 
             if (target) {
-                console.log(`[SetupManager] Found matching webhook ID: ${target.webhookID}`);
+                logger.debug(`SetupManager: Found matching webhook ID: ${target.webhookID}`);
                 const detailResp = await fetch(`https://api.helius.xyz/v0/webhooks/${target.webhookID}?api-key=${this.apiKey}`);
                 if (!detailResp.ok) throw new Error(`Failed to fetch webhook details: ${detailResp.status} ${detailResp.statusText}`);
 
                 const detailData = await detailResp.json() as any;
                 const currentAddresses = detailData.accountAddresses || [];
-                console.log(`[SetupManager] Current Address Count: ${currentAddresses.length}`);
+                logger.debug(`SetupManager: Current Address Count: ${currentAddresses.length}`);
 
                 // 1. Remove ALL mints belonging to this collection
                 const collectionMintSet = new Set(allMintsInCollection);
                 const beforeCount = currentAddresses.length;
                 finalAddressList = currentAddresses.filter((addr: string) => !collectionMintSet.has(addr));
                 const removedCount = beforeCount - finalAddressList.length;
-                console.log(`[SetupManager] Removed ${removedCount} stale addresses. Remaining: ${finalAddressList.length}`);
+                logger.debug(`SetupManager: Removed ${removedCount} stale addresses. Remaining: ${finalAddressList.length}`);
 
                 // 2. Add NEW filtered mints
                 finalAddressList.push(...newMintsToWatch);
-                console.log(`[SetupManager] Final Count for Update: ${finalAddressList.length}`);
+                logger.debug(`SetupManager: Final Count for Update: ${finalAddressList.length}`);
 
                 // 3. Handle Empty List (DELETE instead of PUT)
                 if (finalAddressList.length === 0) {
-                    console.log(`[SetupManager] No addresses remaining. Deleting Webhook ${target.webhookID}...`);
+                    logger.info(`SetupManager: No addresses remaining. Deleting Webhook ${target.webhookID}...`);
                     const deleteResp = await fetch(`https://api.helius.xyz/v0/webhooks/${target.webhookID}?api-key=${this.apiKey}`, {
                         method: 'DELETE'
                     });
@@ -401,7 +402,7 @@ export class SetupManager {
                         const errorText = await deleteResp.text();
                         throw new Error(`Failed to delete empty webhook: ${deleteResp.status} ${errorText}`);
                     }
-                    console.log('[SetupManager] Helius Webhook Deleted Successfully.');
+                    logger.info('SetupManager: Helius Webhook Deleted Successfully.');
                     return;
                 }
 
@@ -424,11 +425,11 @@ export class SetupManager {
                 }
 
             } else {
-                console.log('[SetupManager] No existing webhook found for this URL. Creating new one...');
+                logger.info('SetupManager: No existing webhook found for this URL. Creating new one...');
                 finalAddressList = newMintsToWatch;
 
                 if (finalAddressList.length === 0) {
-                    console.log('[SetupManager] No addresses to watch. Skipping webhook creation.');
+                    logger.info('SetupManager: No addresses to watch. Skipping webhook creation.');
                     return;
                 }
 
@@ -450,10 +451,10 @@ export class SetupManager {
                 }
             }
 
-            console.log('[SetupManager] Helius Webhook Synced Successfully.');
+            logger.info('SetupManager: Helius Webhook Synced Successfully.');
 
         } catch (e: any) {
-            console.error('[SetupManager] Webhook Sync Failed:', e.message);
+            logger.error('SetupManager: Webhook Sync Failed:', e.message);
             throw new Error(`Webhook Sync Failed: ${e.message}`);
         }
     }
@@ -465,10 +466,10 @@ export class SetupManager {
             try {
                 const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
                 const allMints = Object.keys(data);
-                console.log(`[SetupManager] Cleaning up ${allMints.length} addresses from Helius for ${symbol}...`);
+                logger.info(`SetupManager: Cleaning up ${allMints.length} addresses from Helius for ${symbol}...`);
                 await this.smartUpdateWebhook(allMints, []); // Remove all, add none
             } catch (e) {
-                console.error(`[SetupManager] Error during Helius cleanup for ${symbol}:`, e);
+                logger.error(`SetupManager: Error during Helius cleanup for ${symbol}:`, e);
             }
         }
 
@@ -480,7 +481,7 @@ export class SetupManager {
             try {
                 fs.unlinkSync(dataPath);
             } catch (e) {
-                console.error(`[SetupManager] Error deleting ${symbol}.json:`, e);
+                logger.error(`SetupManager: Error deleting ${symbol}.json:`, e);
             }
         }
     }
@@ -492,10 +493,10 @@ export class SetupManager {
             try {
                 const data = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
                 const allMints = Object.keys(data);
-                console.log(`[SetupManager] Removing ${symbol} from Helius webhook...`);
+                logger.info(`SetupManager: Removing ${symbol} from Helius webhook...`);
                 await this.smartUpdateWebhook(allMints, []); // Remove all from this collection
             } catch (e) {
-                console.error(`[SetupManager] Error during Helius removal for ${symbol}:`, e);
+                logger.error(`SetupManager: Error during Helius removal for ${symbol}:`, e);
             }
         }
 

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Config, TargetCollection, FilterRule } from '../types';
+import { logger } from '../utils/logger';
 
 const CONFIG_PATH = path.join(process.cwd(), 'config.json');
 
@@ -55,7 +56,7 @@ export class ConfigManager {
     }
 
     // Old format: convert to new
-    console.log(`[Config] Migrating old target format for ${target.symbol}`);
+    logger.info(`Migrating old target format for ${target.symbol}`);
     return {
       symbol: target.symbol,
       filters: [{
@@ -75,9 +76,9 @@ export class ConfigManager {
   public async saveConfig(): Promise<void> {
     try {
       await fs.promises.writeFile(CONFIG_PATH, JSON.stringify(this.config, null, 2), 'utf-8');
-      console.log('Config saved successfully');
+      // Success log removed for VPS optimization (Silence routine saves)
     } catch (error) {
-      console.error('Error saving config:', error);
+      logger.error('Error saving config:', error);
     }
   }
 

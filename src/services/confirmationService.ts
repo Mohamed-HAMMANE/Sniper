@@ -1,5 +1,6 @@
 import { Connection } from '@solana/web3.js';
 import { SSEBroadcaster } from '../api/sseEndpoint';
+import { logger } from '../utils/logger';
 
 export class ConfirmationService {
     private connection: Connection;
@@ -11,14 +12,14 @@ export class ConfirmationService {
         this.connection = new Connection(urlToUse, 'confirmed');
 
         if (publicRpcUrl) {
-            console.log(`[ConfirmationService] Using Public RPC for status checks: ${publicRpcUrl}`);
+            logger.debug(`ConfirmationService: Using Public RPC for status checks: ${publicRpcUrl}`);
         }
 
         this.broadcaster = broadcaster;
     }
 
     public async monitor(signature: string, label: string = 'Buy') {
-        console.log(`[Confirmation] Monitoring ${label} tx: ${signature}`);
+        logger.debug(`Confirmation: Monitoring ${label} tx: ${signature}`);
 
         // Wait a bit before first check (give it time to propagate)
         await new Promise(r => setTimeout(r, 2000));
@@ -32,13 +33,13 @@ export class ConfirmationService {
 
                 if (status && status.value) {
                     if (status.value.err) {
-                        console.error(`[Confirmation] ❌ ${label} Failed: ${JSON.stringify(status.value.err)}`);
+                        logger.error(`${label} Failed: ${JSON.stringify(status.value.err)}`);
                         this.broadcaster.broadcastMessage('tx_failed', { signature, error: status.value.err });
                         return;
                     }
 
                     if (status.value.confirmationStatus === 'confirmed' || status.value.confirmationStatus === 'finalized') {
-                        console.log(`[Confirmation] ✅ ${label} Confirmed!`);
+                        logger.info(`${label} Confirmed!`);
                         this.broadcaster.broadcastMessage('tx_confirmed', { signature });
                         return;
                     }
@@ -49,11 +50,11 @@ export class ConfirmationService {
                 if (retries < MAX_RETRIES) {
                     setTimeout(check, 2000);
                 } else {
-                    console.warn(`[Confirmation] ⚠️ ${label} Timeout waiting for confirmation.`);
+                    logger.warn(`${label} Timeout waiting for confirmation.`);
                     this.broadcaster.broadcastMessage('tx_timeout', { signature });
                 }
             } catch (error) {
-                console.error(`[Confirmation] Error checking status:`, error);
+                logger.error('Error checking status:', error);
             }
         };
 

@@ -14,6 +14,7 @@ import { Keypair, Connection, VersionedTransaction, PublicKey, Transaction } fro
 import { getAssociatedTokenAddress } from '@solana/spl-token';
 import { JitoService } from './services/jitoService';
 import { Agent, setGlobalDispatcher } from 'undici';
+import { logger } from './utils/logger';
 
 // 1. GLOBAL HTTP OPTIMIZATION
 // This forces ALL fetch calls in the app to share this persistent connection pool.
@@ -55,7 +56,7 @@ app.use((req, res, next) => {
     if (heliusSecret) {
       const authHeader = req.headers['authorization'];
       if (authHeader !== heliusSecret) {
-        console.log(`[Security] Blocked unauthorized webhook request from ${req.ip}`);
+        logger.warn(`Blocked unauthorized webhook request from ${req.ip}`);
         return res.status(403).send('Forbidden');
       }
     }
@@ -93,7 +94,7 @@ const PUBLIC_RPC_URL = process.env.PUBLIC_RPC_URL || '';
 
 // User guaranteed these are not empty, but we keep the warn just in case
 if (!RPC_URL) {
-  console.warn('⚠️ Warning: RPC_URL is not defined in .env. Some features may not work.');
+  logger.warn('RPC_URL is not defined in .env. Some features may not work.');
 }
 
 const configManager = new ConfigManager();
@@ -574,11 +575,11 @@ app.post('/webhook', (req, res) => {
             broadcaster.broadcastListing(listing);
 
             if (shouldAutoBuy) {
-              console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
+              logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${priceSol} SOL`);
               executeBuyTransaction(mint, priceSol, seller, undefined, auctionHouse, expiry, maxPriorityFee)
                 .then(async sig => {
                   if (sig === 'SKIPPED_DUPLICATE') return;
-                  console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                  logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
                   if (matchingFilterId) {
                     await configManager.incrementBuyCount(target.symbol, matchingFilterId);
                     broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -586,7 +587,7 @@ app.post('/webhook', (req, res) => {
                 })
                 .catch(err => {
                   if (err === 'SKIPPED_DUPLICATE') return;
-                  console.error(`[AutoBuy] FAILED: ${err.message}`)
+                  logger.error(`AutoBuy FAILED: ${err.message}`)
                 });
             }
           }
@@ -754,11 +755,11 @@ app.post('/webhook', (req, res) => {
 
                 // Auto Buy (per filter)
                 if (shouldAutoBuy) {
-                  console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
+                  logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via UNKNOWN parsing)`);
                   executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, undefined, 0, maxPriorityFee, true)
                     .then(async sig => {
                       if (sig === 'SKIPPED_DUPLICATE') return;
-                      console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                      logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
                       if (matchingFilterId) {
                         await configManager.incrementBuyCount(collectionSymbol, matchingFilterId);
                         broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -766,7 +767,7 @@ app.post('/webhook', (req, res) => {
                     })
                     .catch(err => {
                       if (err === 'SKIPPED_DUPLICATE') return;
-                      console.error(`[AutoBuy] FAILED: ${err.message}`)
+                      logger.error(`AutoBuy FAILED: ${err.message}`)
                     });
                 }
                 break; // Found matching listing, break potentialMint loop (since mint found)
@@ -1013,11 +1014,11 @@ app.post('/webhook', (req, res) => {
 
                   // Auto Buy (per filter)
                   if (shouldAutoBuy) {
-                    console.log(`[AutoBuy] Triggered for ${itemMeta.name} @ ${price} SOL (via RAW parsing)`);
+                    logger.info(`AutoBuy Triggered for ${itemMeta.name} @ ${price} SOL (via RAW parsing)`);
                     executeBuyTransaction(potentialMint, price, listing.seller || 'Unknown', undefined, auctionHouse, expiry, maxPriorityFee)
                       .then(async sig => {
                         if (sig === 'SKIPPED_DUPLICATE') return;
-                        console.log(`[AutoBuy] SUCCESS! Sig: ${sig}`);
+                        logger.info(`AutoBuy SUCCESS! Sig: ${sig}`);
                         if (matchingFilterId) {
                           await configManager.incrementBuyCount(target.symbol, matchingFilterId);
                           broadcaster.broadcastMessage('config_update', configManager.getTargets());
@@ -1025,7 +1026,7 @@ app.post('/webhook', (req, res) => {
                       })
                       .catch(err => {
                         if (err === 'SKIPPED_DUPLICATE') return;
-                        console.error(`[AutoBuy] FAILED: ${err.message}`)
+                        logger.error(`AutoBuy FAILED: ${err.message}`)
                       });
                   }
                   break; // Found matching listing, break potentialMint loop (since mint found)
@@ -1082,7 +1083,7 @@ setInterval(async () => {
 
 // Connection Warmer: Pings ME every 5s to keep TLS connection hot
 function startConnectionWarmer() {
-  console.log('[Server] Starting Magic Eden Connection Warmer (TLS Keep-Alive)...');
+  logger.info('Starting Magic Eden Connection Warmer (TLS Keep-Alive)...');
   setInterval(async () => {
     try {
       // Use a cheap endpoint just to keep the handshake valid.
@@ -1091,7 +1092,7 @@ function startConnectionWarmer() {
       await fetch('https://api-mainnet.magiceden.dev/v2/instructions/buy_now?buyer=11111111111111111111111111111111&seller=11111111111111111111111111111111&price=0&tokenMint=11111111111111111111111111111111&tokenATA=11111111111111111111111111111111', {
         headers: { 'Authorization': `Bearer ${process.env.ME_API_KEY}` }
       });
-      // console.log('[Warmer] Ping');
+      logger.debug('Warmer Ping');
     } catch {
       // Ignore errors, it's just a warmer
     }
@@ -1102,18 +1103,17 @@ function startConnectionWarmer() {
 
 // Start Server
 app.listen(PORT, () => {
-  console.log(`NFT Sniper running on port ${PORT}`);
-  console.log(`[Server] Time: ${new Date().toISOString()}`);
-  console.log('[Server] M2 Support Enabled (fresh build)');
+  logger.info(`NFT Sniper running on port ${PORT}`);
+  logger.info(`M2 Support Enabled (fresh build)`);
 });
 
 // Shutdown
 const shutdown = async (signal: string) => {
-  console.log(`\n[Server] Shutting down (${signal})...`);
+  logger.info(`Shutting down (${signal})...`);
   await collectionService.stopAutoSave();
   blockhashManager.stop();
   balanceMonitor.stop();
-  console.log('[Server] Shutdown complete. Exiting.');
+  logger.info('Shutdown complete. Exiting.');
   process.exit(0);
 };
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -1165,7 +1165,7 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
 
     // 2. VERIFICATION (Only run if we are blind)
     if (needsVerification) {
-      console.log(`[Buy] ⚠️ Data missing. Fetching from ME (Cost: ~500ms)...`);
+      logger.info(`⚠️ Data missing. Fetching from ME (Cost: ~500ms)...`);
 
       const detailsUrl = `https://api-mainnet.magiceden.dev/v2/tokens/${mint}/listings`;
       const detailsResp = await fetch(detailsUrl, {
@@ -1288,10 +1288,10 @@ async function executeBuyTransaction(mint: string, price: number, seller: string
     try {
       console.log(`[Buy] Sending via Jito Bundle (Tip: ${jitoTipLamports})...`);
       const bundleId = await jitoService.sendBundle(transaction, burnerWallet, jitoTipLamports, blockhashToUse);
-      console.log(`[Buy] Jito Bundle ID: ${bundleId}`);
+      logger.debug(`Jito Bundle ID: ${bundleId}`);
     } catch (error: any) {
-      console.error('[Buy] Jito failed:', error.message);
-      console.log('[Buy] Falling back to Standard RPC...');
+      logger.error('Jito failed:', error.message);
+      logger.info('Falling back to Standard RPC...');
 
       const serializedTx = transaction.serialize();
       if (heliusConnection) {

@@ -1,6 +1,7 @@
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { decodeBase58 } from '../utils/base58';
 import { SSEBroadcaster } from '../api/sseEndpoint';
+import { logger } from '../utils/logger';
 
 export class BalanceMonitor {
     private connection: Connection;
@@ -15,7 +16,7 @@ export class BalanceMonitor {
         this.connection = new Connection(urlToUse, 'confirmed');
 
         if (publicRpcUrl) {
-            console.log(`[BalanceMonitor] Using Public RPC for updates: ${publicRpcUrl}`);
+            logger.debug(`BalanceMonitor: Using Public RPC for updates: ${publicRpcUrl}`);
         }
 
         this.broadcaster = broadcaster;
@@ -43,12 +44,12 @@ export class BalanceMonitor {
         try {
             const lamports = await this.connection.getBalance(this.walletPublicKey);
             this.currentBalance = lamports / LAMPORTS_PER_SOL;
-            // console.log(`[Balance] Updated: ${this.currentBalance.toFixed(3)} SOL`);
+            logger.debug(`Balance Updated: ${this.currentBalance.toFixed(3)} SOL`);
 
             // Broadcast update
             this.broadcaster.broadcastMessage('balanceUpdate', { balance: this.currentBalance });
         } catch (error) {
-            console.error('[Balance] Failed to update:', error);
+            logger.error('Balance failed to update:', error);
         }
     }
 

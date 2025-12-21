@@ -1,4 +1,5 @@
 import { Connection, BlockhashWithExpiryBlockHeight } from '@solana/web3.js';
+import { logger } from '../utils/logger';
 
 export class BlockhashManager {
     private connection: Connection;
@@ -12,7 +13,7 @@ export class BlockhashManager {
         this.connection = new Connection(urlToUse, 'confirmed');
 
         if (publicRpcUrl) {
-            console.log(`[BlockhashManager] Using Public RPC for blockhash updates: ${publicRpcUrl}`);
+            logger.debug(`BlockhashManager: Using Public RPC for blockhash updates: ${publicRpcUrl}`);
         }
 
         this.startPolling();
@@ -31,9 +32,9 @@ export class BlockhashManager {
         try {
             const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
             this.latestBlockhash = { blockhash, lastValidBlockHeight };
-            // console.log(`[BlockhashManager] Updated: ${blockhash.slice(0, 8)}...`);
+            logger.debug(`Blockhash Updated: ${blockhash.slice(0, 8)}...`);
         } catch (error) {
-            console.error('[BlockhashManager] Failed to update blockhash:', error);
+            logger.error('Failed to update blockhash:', error);
         }
     }
 

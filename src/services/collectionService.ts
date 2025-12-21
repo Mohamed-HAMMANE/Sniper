@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CollectionMetadata } from '../types';
+import { logger } from '../utils/logger';
 
 interface ItemMetadata {
     name: string;
@@ -76,7 +77,7 @@ export class CollectionService {
                     }
                 }
 
-                console.log(`[CollectionService] Loaded ${this.collections.length} collections (migrated).`);
+                logger.debug(`Loaded ${this.collections.length} collections (migrated).`);
 
                 // Load individual databases
                 this.itemDatabases.clear();
@@ -84,12 +85,12 @@ export class CollectionService {
                     this.loadDatabase(col.symbol);
                 }
             } else {
-                console.warn('[CollectionService] collections.json not found. Initializing empty.');
+                logger.warn('collections.json not found. Initializing empty.');
                 this.collections = [];
                 fs.writeFileSync(collectionsPath, '[]');
             }
         } catch (error) {
-            console.error('[CollectionService] Error loading collections, resetting db:', error);
+            logger.error('Error loading collections, resetting db:', error);
             this.collections = [];
             try {
                 const collectionsPath = path.join(this.dataDir, 'collections.json');
@@ -105,12 +106,12 @@ export class CollectionService {
                 const data = fs.readFileSync(dbPath, 'utf-8');
                 const db = JSON.parse(data);
                 this.itemDatabases.set(symbol, db);
-                console.log(`[CollectionService] Loaded database for ${symbol} (${Object.keys(db).length} items).`);
+                logger.debug(`Loaded database for ${symbol} (${Object.keys(db).length} items).`);
             } else {
-                console.warn(`[CollectionService] Database for ${symbol} not found at ${dbPath}`);
+                logger.warn(`Database for ${symbol} not found at ${dbPath}`);
             }
         } catch (error) {
-            console.error(`[CollectionService] Error loading database for ${symbol}:`, error);
+            logger.error(`Error loading database for ${symbol}:`, error);
         }
     }
 
@@ -155,9 +156,9 @@ export class CollectionService {
                 await fs.promises.writeFile(tempPath, JSON.stringify(this.collections, null, 2), 'utf-8');
                 await fs.promises.rename(tempPath, collectionsPath);
                 this.isDirty = false;
-                console.log(`[CollectionService] Persisted ${this.collections.length} collections.`);
+                logger.debug(`Persisted ${this.collections.length} collections.`);
             } catch (error) {
-                console.error('[CollectionService] Error saving collections:', error);
+                logger.error('Error saving collections:', error);
             } finally {
                 this.currentSavePromise = null;
             }
@@ -185,7 +186,7 @@ export class CollectionService {
 
         this.isDirty = true;
         await this.saveCollections();
-        console.log(`[CollectionService] Added/Updated collection: ${metadata.symbol}`);
+        logger.info(`Added/Updated collection: ${metadata.symbol}`);
     }
 
     public async removeCollection(symbol: string) {
@@ -193,7 +194,7 @@ export class CollectionService {
         this.itemDatabases.delete(symbol);
         this.isDirty = true;
         await this.saveCollections();
-        console.log(`[CollectionService] Removed collection: ${symbol}`);
+        logger.info(`Removed collection: ${symbol}`);
     }
 
     public getTraits(symbol: string): Record<string, Record<string, number>> {

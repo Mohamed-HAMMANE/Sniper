@@ -1,5 +1,6 @@
 import { Connection, Keypair, VersionedTransaction, PublicKey, SystemProgram, Transaction, Message } from '@solana/web3.js';
 import bs58 from 'bs58';
+import { logger } from '../utils/logger';
 
 // Jito Block Engine URLs
 const BLOCK_ENGINE_URLS = {
@@ -37,7 +38,7 @@ export class JitoService {
         this.connection = new Connection(rpcUrl, 'confirmed');
 
         if (publicRpcUrl) {
-            console.log(`[JitoService] Using Public RPC for Tip Warmer: ${publicRpcUrl}`);
+            logger.debug(`JitoService: Using Public RPC for Tip Warmer: ${publicRpcUrl}`);
             this.publicConnection = new Connection(publicRpcUrl, 'confirmed');
         }
     }
@@ -49,7 +50,7 @@ export class JitoService {
 
     // Background Warmer: Pre-signs the tip transaction to save CPU at snipe time
     public startTipWarmer(signer: Keypair, tipLamports: number) {
-        console.log(`[Jito] Starting Tip Warmer for ${tipLamports} lamports...`);
+        logger.info(`Jito: Starting Tip Warmer for ${tipLamports} lamports...`);
         this.updateCachedTip(signer, tipLamports);
 
         // Update every 30 seconds (Blockhashes last ~60s, so this is safe)
@@ -83,9 +84,9 @@ export class JitoService {
             this.cachedBlockhash = blockhash;
             this.cachedTipLamports = tipLamports;
 
-            // console.log(`[Jito] Internal Warmer: Tip refreshed (Blockhash: ${blockhash.slice(0, 8)}...)`);
+            // logger.debug(`Jito: Internal Warmer: Tip refreshed (Blockhash: ${blockhash.slice(0, 8)}...)`);
         } catch (e: any) {
-            console.error('[Jito] Warmer Failed:', e.message);
+            logger.error('Jito Warmer Failed:', e.message);
         }
     }
 
@@ -100,9 +101,9 @@ export class JitoService {
                 // Actually, for the Tip Tx, it effectively stands alone in the bundle.
                 // We just use the pre-signed valid one.
                 b64TipTx = this.cachedTipTx;
-                // console.log('[Jito] FAST PATH: Using Pre-Signed Tip Transaction');
+                // logger.debug('Jito FAST PATH: Using Pre-Signed Tip Transaction');
             } else {
-                console.log('[Jito] SLOW PATH: Signing new Tip Transaction...');
+                logger.debug('Jito SLOW PATH: Signing new Tip Transaction...');
                 // 1. Create Tip Transaction (Fallback)
                 const tipAccount = this.getRandomTipAccount();
                 // ... (Original logic logic)
@@ -152,7 +153,7 @@ export class JitoService {
             };
 
             const endpoints = Object.values(BLOCK_ENGINE_URLS);
-            console.log(`[Jito] Shotgun! Sending to ${endpoints.length} regions simultaneously...`);
+            logger.debug(`Jito: Shotgun! Sending to ${endpoints.length} regions simultaneously...`);
 
             // Helper to send to one endpoint
             const sendToEndpoint = async (url: string): Promise<string> => {
@@ -170,8 +171,7 @@ export class JitoService {
 
                     const data: any = await response.json();
                     if (data.error) throw new Error(JSON.stringify(data.error));
-
-                    console.log(`[Jito] Success from ${url}`);
+                    logger.debug(`Jito: Success from ${url}`);
                     return data.result;
                 } catch (err: any) {
                     // console.log(`[Jito] Error from ${url}: ${err.message}`);
@@ -182,16 +182,16 @@ export class JitoService {
             // Promise.any polyfill behavior: Return first success, reject if ALL fail
             try {
                 const bundleId = await Promise.any(endpoints.map(url => sendToEndpoint(url)));
-                console.log(`[Jito] Bundle Accepted! ID: ${bundleId}`);
+                logger.info(`Jito Bundle Accepted! ID: ${bundleId}`);
                 return bundleId;
             } catch (aggregateError: any) {
-                console.error('[Jito] All regions failed.');
+                logger.error('Jito: All regions failed.');
                 throw new Error('All Jito endpoints rejected the bundle (likely Rate Limited validation)');
             }
         } catch (error: any) {
             // If it was the AggregateError from Promise.any, we already logged it.
             // Just rethrow so server.ts knows to fallback.
-            console.error('[Jito] Shotgun failed:', error.message);
+            logger.error('Jito: Shotgun failed:', error.message);
             throw error;
         }
     }
