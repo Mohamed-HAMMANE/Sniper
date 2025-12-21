@@ -19,8 +19,9 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **📊 Smart Charts**: Interactive floor price history with smoothed trends (15-min intervals) to reduce noise while maintaining live updates.
 - **🌊 Live Feed**: Real-time stream of incoming listings with "Good/Bad Deal" visual indicators.
 - **⚡ Instant Buy**: One-click manual buy or fully automated sniping with a burner wallet.
-- **�️ Collection Manager**: Centralized hub to manage downloaded collections. View sync status, toggle webhooks, and use **Smart Restore** to instantly re-sync logic and filters.
-- **�📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
+- **🛠️ Collection Manager**: Centralized hub to manage downloaded collections. View sync status, toggle webhooks, and use **Smart Restore** to instantly re-sync logic and filters.
+- **🧩 Collection Explorer**: Premium glassmorphic interface to visually browse NFT collections. Features infinite scroll, real-time trait filtering, and "Hidden Gem" detection based on rank discrepancies.
+- **📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
 - **💾 Auto-Persistence**: Automatically saves floor prices and target configurations to disk.
 
 ## 🛠️ Project Structure
@@ -145,6 +146,7 @@ This tool acts as a **Sniper for Unlisted Collections** (hidden gems not on SolR
 - `GET /api/stats`: System health stats.
 - `GET /api/history/:symbol`: Get floor price history chart data.
 - `GET /api/traits/:symbol`: Get available traits for a collection.
+- `GET /api/collection/:symbol/items`: Get full item database for the Explorer.
 - `GET /api/listings-stream`: SSE endpoint for frontend updates.
 
 **Target Management**
