@@ -11,7 +11,7 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **🎯 Multi-Target Support**: Monitor multiple collections simultaneously. **Advanced Filtering**: Apply multiple strategy filters per collection (e.g., "Snipe Rares < 50 SOL" AND "Snipe Floor < 10 SOL").
 - **🧠 Advanced Parsing**: Custom decoder for **Magic Eden V2** instructions, detecting listings even when standard parsers return "Unknown" transaction types.
 - **🛡️ Rarity Integration**: Filter snipes by rarity rank (Statistical or Additive scaling) to find underpriced rare items.
-- **🎨 Trait Filters**: SolRarity Sniper-style attribute picker to filter by specific traits (e.g., \"Background: Red\" AND \"Hat: Crown\"). Uses OR within categories, AND between categories.
+- **🎨 Flexible Trait Filters**: SolRarity Sniper-style attribute picker with **Logic Toggle**. Choose between **Restrictive (AND)** mode (Must match Rarity AND Traits) or **Inclusive (OR)** mode (Matches Rarity OR Traits) for maximum sniping flexibility. Uses OR within categories.
 - **💰 Auto-Buying Engine**: Integrated **Jito Bundles** support to bypass network congestion and protect against sandwiches. Includes "Smart Fetch" to validate listing parameters before execution.
 - **🧠 Smart Resource Management**: Hybrid RPC strategy offloads background tasks (Blockhash, Balance) to free public nodes, reducing paid RPC usage by **99%**.
 
@@ -19,7 +19,8 @@ A high-performance, real-time NFT listing monitor for Solana, designed to snipe 
 - **📊 Smart Charts**: Interactive floor price history with smoothed trends (15-min intervals) to reduce noise while maintaining live updates.
 - **🌊 Live Feed**: Real-time stream of incoming listings with "Good/Bad Deal" visual indicators.
 - **⚡ Instant Buy**: One-click manual buy or fully automated sniping with a burner wallet.
-- **📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
+- **�️ Collection Manager**: Centralized hub to manage downloaded collections. View sync status, toggle webhooks, and use **Smart Restore** to instantly re-sync logic and filters.
+- **�📱 Responsive Sidebar**: Collapsible sidebar for managing active watches and collections.
 - **💾 Auto-Persistence**: Automatically saves floor prices and target configurations to disk.
 
 ## 🛠️ Project Structure
