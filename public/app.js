@@ -150,6 +150,9 @@ async function loadStats() {
       const count = stats.connectedClients || 1;
       clientStatus.innerHTML = `<span class="status-dot"></span><span class="status-label">${count} Connected</span>`;
     }
+
+    // Store wallet address
+    if (stats.walletAddress) walletAddress = stats.walletAddress;
   } catch (e) { }
   setTimeout(loadStats, 5000);
 }
@@ -171,6 +174,28 @@ function handleFloorPriceUpdate({ symbol, floorPrice }) {
   const fpEl = document.querySelector(`.target-tag[data-symbol="${symbol}"] .target-floor`);
   if (fpEl) fpEl.textContent = `FP: ${Number(floorPrice).toFixed(3)} SOL`;
 }
+
+// ==================== COPY WALLET ====================
+let walletAddress = '';
+
+function setupCopyListener() {
+  const copyBtn = document.getElementById('copy-address-btn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+      if (!walletAddress) {
+        showToast('Address not loaded yet', 'error');
+        return;
+      }
+      navigator.clipboard.writeText(walletAddress).then(() => {
+        showToast('Address copied to clipboard!', 'success');
+      }).catch(err => {
+        console.error('Failed to copy: ', err);
+        showToast('Failed to copy address', 'error');
+      });
+    });
+  }
+}
+document.addEventListener('DOMContentLoaded', setupCopyListener);
 
 // ==================== COLLECTION WIDGET ====================
 function renderCollectionWidget() {

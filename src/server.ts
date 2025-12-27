@@ -152,7 +152,8 @@ app.get('/api/stats', (req, res) => {
     cacheSize: cache.getCacheSize(),
     connectedClients: broadcaster.getClientCount(),
     activeTargets: configManager.getTargets().length,
-    balance: balanceMonitor.getBalance()
+    balance: balanceMonitor.getBalance(),
+    walletAddress: balanceMonitor.getWalletAddress()
   });
 });
 

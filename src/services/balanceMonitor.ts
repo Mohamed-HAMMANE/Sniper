@@ -57,6 +57,10 @@ export class BalanceMonitor {
         return this.currentBalance;
     }
 
+    public getWalletAddress(): string {
+        return this.walletPublicKey.toBase58();
+    }
+
     public decreaseBalance(amount: number) {
         this.currentBalance -= amount;
         // Broadcast update immediately so UI reflects the change
