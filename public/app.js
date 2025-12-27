@@ -144,6 +144,12 @@ async function loadStats() {
     const res = await fetch('/api/stats');
     const stats = await res.json();
     if (cacheCount) cacheCount.textContent = stats.cacheSize || 0;
+
+    // Update connected count if we are currently connected
+    if (clientStatus && clientStatus.classList.contains('connected')) {
+      const count = stats.connectedClients || 1;
+      clientStatus.innerHTML = `<span class="status-dot"></span><span class="status-label">${count} Connected</span>`;
+    }
   } catch (e) { }
   setTimeout(loadStats, 5000);
 }
